@@ -1,4 +1,4 @@
-import { joinName, maskFolio, normalizeName, phoneticKeys } from "@finsol/shared";
+import { canonicalNameParts, joinName, maskFolio, phoneticKeys } from "@finsol/shared";
 
 import { blindIndex, encryptField, type FieldKeys } from "./crypto.js";
 
@@ -8,11 +8,9 @@ export interface FolioNameInput {
   last?: string | null;
 }
 
-/** The normalised and phonetic search columns for a holder's name. */
+/** The normalised and phonetic search columns for a holder's name (see canonicalNameParts). */
 export function folioSearchColumns(name: FolioNameInput) {
-  const first = normalizeName(name.first);
-  const middle = normalizeName(name.middle);
-  const last = normalizeName(name.last);
+  const { first, middle, last } = canonicalNameParts(name);
   return {
     fullNameNorm: joinName({ first, middle, last }),
     firstNameNorm: first,

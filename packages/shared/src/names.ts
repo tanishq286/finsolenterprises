@@ -67,6 +67,25 @@ export function splitName(raw: string): NameParts {
   };
 }
 
+/**
+ * Canonical first / middle / last for a stored holder name. Filings often put
+ * the whole name in one column, or a two-word name in the first and middle
+ * columns with the last empty; search splits a typed name with splitName, so
+ * a stored name without a last name is re-split the same way.
+ */
+export function canonicalNameParts(parts: {
+  first?: string | null;
+  middle?: string | null;
+  last?: string | null;
+}): { first: string; middle: string; last: string } {
+  const first = normalizeName(parts.first);
+  const middle = normalizeName(parts.middle);
+  const last = normalizeName(parts.last);
+  if (last) return { first, middle, last };
+  const split = splitName([first, middle].filter(Boolean).join(" "));
+  return { first: split.first, middle: split.middle, last: split.last };
+}
+
 /** Joins provided parts into the canonical full name. */
 export function joinName(parts: { first?: string; middle?: string; last?: string }): string {
   return normalizeName([parts.first, parts.middle, parts.last].filter(Boolean).join(" "));

@@ -19,6 +19,7 @@ import {
   resolveSearch,
   SERVICE_VERTICALS,
   splitName,
+  canonicalNameParts,
   numberToIndianWords,
   POPULAR_EXAMPLES,
   rupeesInWords,
@@ -285,5 +286,48 @@ describe("Finsol: words, calculator examples and service steps", () => {
       "Complete Paperwork & Legal Execution by Finsol",
       "Direct Demat & Bank Credit",
     ]);
+  });
+});
+
+describe("canonicalNameParts", () => {
+  it("re-splits a whole name stored in the first column", () => {
+    expect(canonicalNameParts({ first: "Namita Maji" })).toEqual({
+      first: "NAMITA",
+      middle: "",
+      last: "MAJI",
+    });
+    expect(canonicalNameParts({ first: "MUKESH KUMAR KOTHARI", middle: "", last: "" })).toEqual({
+      first: "MUKESH",
+      middle: "KUMAR",
+      last: "KOTHARI",
+    });
+  });
+
+  it("moves a surname stored as the middle name into the last name", () => {
+    expect(canonicalNameParts({ first: "MANPREET", middle: "KANG", last: null })).toEqual({
+      first: "MANPREET",
+      middle: "",
+      last: "KANG",
+    });
+    // Matches how search splits the same name typed as one string.
+    const typed = splitName("P Rajasekharan");
+    expect(canonicalNameParts({ first: "P", middle: "RAJASEKHARAN" })).toEqual({
+      first: typed.first,
+      middle: typed.middle,
+      last: typed.last,
+    });
+  });
+
+  it("leaves names that already have a last name, and single names, alone", () => {
+    expect(canonicalNameParts({ first: "RAMESH", middle: "KUMAR", last: "AGARWAL" })).toEqual({
+      first: "RAMESH",
+      middle: "KUMAR",
+      last: "AGARWAL",
+    });
+    expect(canonicalNameParts({ first: "LAKSHMI" })).toEqual({
+      first: "LAKSHMI",
+      middle: "",
+      last: "",
+    });
   });
 });

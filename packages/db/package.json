@@ -28,7 +28,8 @@
     "reprocess:sources": "node dist/cli/reprocess-sources.js",
     "audit:coverage": "node scripts/coverage-audit.mjs",
     "test": "vitest run",
-    "acquire": "node dist/cli/acquire.js"
+    "acquire": "node dist/cli/acquire.js",
+    "repair:names": "node dist/cli/repair-name-split.js"
   },
   "dependencies": {
     "@finsol/shared": "*",
