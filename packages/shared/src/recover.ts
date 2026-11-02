@@ -50,7 +50,8 @@ export const RECOVER_STEPS = [
     key: "6_EMPLOY_IEPF5_RTA",
     letter: "E",
     name: "Employ",
-    summary: "IEPF-5 is filed, the registrar and nodal officer verify it.",
+    summary:
+      "Finsol prepares and files the statutory claim; the registrar and the company verify it.",
     owner: "LEGAL_OPS_EXEC",
   },
   {
@@ -157,8 +158,15 @@ export function documentChecklist({
   switch (scenario) {
     case "STANDARD_IEPF5":
       add("ORIGINAL_CERT_OR_FIR", certReason);
-      add("INDEMNITY_BOND", "Required by IEPF-5 on non-judicial stamp paper.");
-      add("IEPF5_ACKNOWLEDGEMENT", "Generated once the e-form is filed; we track its SRN.", false);
+      add(
+        "INDEMNITY_BOND",
+        "Required for the statutory claim, on non-judicial stamp paper. Finsol prepares it.",
+      );
+      add(
+        "IEPF5_ACKNOWLEDGEMENT",
+        "Issued once Finsol files the claim; we track it for you.",
+        false,
+      );
       break;
     case "DUPLICATE_LOC":
       add("ORIGINAL_CERT_OR_FIR", certReason);
@@ -171,7 +179,10 @@ export function documentChecklist({
         "Who inherits: a succession certificate, probate or legal heir certificate.",
       );
       add("ORIGINAL_CERT_OR_FIR", certReason);
-      add("INDEMNITY_BOND", "Required for transmission and for IEPF-5 claims by heirs.");
+      add(
+        "INDEMNITY_BOND",
+        "Required for transmission and for statutory claims by heirs. Finsol prepares it.",
+      );
       add("IEPF5_ACKNOWLEDGEMENT", "Needed if the shares already moved to the IEPF.", false);
       break;
     case "NRI_RECOVERY":

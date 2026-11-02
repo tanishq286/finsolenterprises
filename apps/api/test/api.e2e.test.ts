@@ -382,6 +382,20 @@ describe("calculator: equities and valuation reports", () => {
       expect(res.headers["content-type"]).toContain("application/pdf");
       expect(res.headers["x-report-code"]).toMatch(/^FE-VAL-\d{8}-[0-9A-F]{6}$/);
       expect((res.body as Buffer).subarray(0, 5).toString()).toBe("%PDF-");
+      if (i === 0) {
+        // Commercial rules: custom pricing (no fee percentage, no net-of-fee
+        // figure) and no DIY claim-form names on client material.
+        const text = await pdfText(res.body as Buffer);
+        expect(text).toContain("Total Claimable Wealth");
+        expect(text).toContain(
+          "Success-Based Fee: Custom (Zero Upfront — Quoted per Engagement Letter)",
+        );
+        expect(text).toContain(
+          "Statutory Authority Claim & RTA Verification Filing (Prepared & Executed by Finsol)",
+        );
+        expect(text).not.toMatch(/IEPF-5|ISR-1|Success fee \(|GST on the fee|net in-hand/i);
+        expect(text).not.toMatch(/\d+(\.\d+)?% (of value|success)/i);
+      }
     }
     await request(http)
       .post("/api/v1/valuation/report")
@@ -1833,3 +1847,16 @@ describe("durable acquisition queue", () => {
     }
   });
 });
+
+/** Text of a PDF, one string, with pdf.js's line runs joined by spaces. */
+async function pdfText(buf: Buffer): Promise<string> {
+  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const doc = await pdfjs.getDocument({ data: new Uint8Array(buf), verbosity: 0 }).promise;
+  const parts: string[] = [];
+  for (let p = 1; p <= doc.numPages; p++) {
+    const page = await doc.getPage(p);
+    const content = await page.getTextContent();
+    for (const item of content.items) if ("str" in item) parts.push(item.str);
+  }
+  return parts.join(" ").replace(/\s+/g, " ");
+}

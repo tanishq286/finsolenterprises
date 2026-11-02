@@ -2,7 +2,6 @@ import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf
 import {
   BRAND,
   BRAND_EMAILS,
-  GST_BPS,
   rupeesInWords,
   VALUATION_ASSUMPTIONS,
   type ClaimEstimate,
@@ -27,11 +26,12 @@ const ascii = (s: string) =>
   s
     .replace(/₹/g, "Rs.")
     .replace(/→/g, "->")
-    .replace(/[–—]/g, "-")
+    .replace(/–/g, "-")
     .replace(/[‘’]/g, "'")
     .replace(/[“”]/g, '"')
     .replace(/…/g, "...")
-    .replace(/[^\x20-\x7E\xB7]/g, "");
+    // WinAnsi also covers the middle dot and the em dash.
+    .replace(/[^\x20-\x7E\xB7\u2014]/g, "");
 
 export interface ValuationReportInput {
   reportCode: string;
@@ -67,7 +67,7 @@ export const DOSSIER_CHECKLIST: { heading: string; items: string[] }[] = [
   {
     heading: "Claim filing (prepared and filed by Finsol Enterprises)",
     items: [
-      "Form IEPF-5 claim to the IEPF Authority, for shares and dividends already transferred",
+      "Statutory Authority Claim & RTA Verification Filing (Prepared & Executed by Finsol), for shares and dividends already transferred",
       "Indemnity bond on stamp paper, notarised (stamp duty as per your state)",
       "Advance receipt and the company's entitlement letter",
       "Claim to the company directly, for dividends from the last 7 years still with it",
@@ -226,7 +226,7 @@ export async function buildValuationPdf(r: ValuationReportInput): Promise<Buffer
   );
 
   // ── Scorecard
-  w.heading("Net value scorecard (estimate)");
+  w.heading("Value scorecard (estimate)");
   const e = r.estimate;
   const lines: [string, string, boolean?][] = [
     [
@@ -237,14 +237,9 @@ export async function buildValuationPdf(r: ValuationReportInput): Promise<Buffer
       `Estimated accrued dividends (if none were encashed): ${rs(r.totals.dividendsWithCompanyPaise)} with the companies (last 7 years), ${rs(r.totals.dividendsWithIepfPaise)} with the IEPF`,
       rs(e.accruedDividendsPaise),
     ],
-    ["Total claimable wealth", rs(e.totalClaimablePaise), true],
-    [
-      `Success fee (${e.feeBps / 100}% of value credited; confirmed in your engagement letter)`,
-      `- ${rs(e.successFeePaise)}`,
-    ],
-    [`GST on the fee (${GST_BPS / 100}%)`, `- ${rs(e.gstOnFeePaise)}`],
+    ["Total Claimable Wealth", rs(e.totalClaimablePaise), true],
+    ["Success-Based Fee: Custom (Zero Upfront — Quoted per Engagement Letter)", "Custom"],
     ["Statutory and documentation costs (stamp duty, notarisation, courier)", "At actuals"],
-    ["Estimated net in-hand payout", rs(e.netPaise), true],
   ];
   for (const [label, value, strong] of lines) {
     w.need(18);
@@ -261,7 +256,14 @@ export async function buildValuationPdf(r: ValuationReportInput): Promise<Buffer
     w.text(value, right - f.widthOfTextAtSize(ascii(value), size), size, f, strong ? ACCENT : INK);
     w.y = endY - 5;
   }
-  w.para(`In words: ${rupeesInWords(e.netPaise)} (estimated net).`, M, right - M, 8.5, bold, INK);
+  w.para(
+    `Total Claimable Wealth in words: ${rupeesInWords(e.totalClaimablePaise)}.`,
+    M,
+    right - M,
+    8.5,
+    bold,
+    INK,
+  );
   if (!e.complete)
     w.para(
       `${r.totals.unvaluedLines} holding${r.totals.unvaluedLines > 1 ? "s have" : " has"} no price available, so the figures above understate the total.`,
@@ -402,7 +404,7 @@ export async function buildValuationPdf(r: ValuationReportInput): Promise<Buffer
   w.heading("Assumptions");
   for (const line of [
     ...VALUATION_ASSUMPTIONS,
-    "The fee shown is our standard rate for illustration; your fee is confirmed in the engagement letter before you sign.",
+    "Pricing is custom to each case and quoted in your engagement letter before anything is signed. Nothing is payable upfront.",
     "Not a registered valuer's certificate. The entitlement is confirmed during verification.",
   ])
     w.para(`-  ${line}`, M, right - M, 8, font, MUTED);

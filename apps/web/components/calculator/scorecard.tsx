@@ -1,6 +1,5 @@
 import { GitBranchIcon, LayersIcon, ScissorsIcon, ShoppingBagIcon, SplitIcon } from "lucide-react";
 import {
-  GST_BPS,
   type ClaimEstimate,
   type HoldingValuation,
   type PortfolioTotals,
@@ -144,10 +143,10 @@ function TimelineNode({
 }
 
 /**
- * The net value scorecard: gross value, accrued dividends, total claimable,
- * our fee and the GST on it, and the estimated net in hand. Statutory and
- * documentation costs depend on the state and the case, so they are shown as
- * charged at actuals rather than guessed.
+ * The value scorecard: gross value, accrued dividends and the headline Total
+ * Claimable Wealth. Pricing is custom per case (quoted in the engagement
+ * letter), so no fee percentage or net-of-fee figure is shown to the public.
+ * Statutory and documentation costs vary by state, so they are "at actuals".
  */
 export function NetValueScorecard({
   totals,
@@ -168,12 +167,12 @@ export function NetValueScorecard({
       <div className="grid gap-6 p-5 sm:p-6 lg:grid-cols-[1fr_1.15fr]">
         <div>
           <h3 id="scorecard-heading" className="text-sm font-medium text-fg-3">
-            Estimated net in-hand payout
+            Total Claimable Wealth
           </h3>
           <p className="display mt-1 text-[clamp(2rem,4.2vw,3rem)] text-fg tnum">
-            {formatPaiseCompact(e.netPaise)}
+            {formatPaiseCompact(e.totalClaimablePaise)}
           </p>
-          <p className="mt-1 text-sm text-fg-2 tnum">{formatPaise(e.netPaise)}</p>
+          <p className="mt-1 text-sm text-fg-2 tnum">{formatPaise(e.totalClaimablePaise)}</p>
           <p className="mt-4 text-sm text-fg-2 tnum">
             {formatCount(totals.originalShares)} shares bought →{" "}
             <span className="font-semibold text-fg">{formatCount(totals.currentShares)}</span> today
@@ -199,23 +198,20 @@ export function NetValueScorecard({
           >
             {formatPaise(e.accruedDividendsPaise)}
           </Line>
-          <Line label="Total claimable wealth" strong>
+          <Line label="Total Claimable Wealth" strong>
             {formatPaise(e.totalClaimablePaise)}
           </Line>
           <Line
-            label={`Success fee (${e.feeBps / 100}%) + GST (${GST_BPS / 100}%)`}
-            hint="On value actually credited; confirmed in your engagement letter. No upfront fee."
+            label="Success-Based Fee"
+            hint="Zero upfront. Charged only on value actually credited to you."
           >
-            −{formatPaise(e.successFeePaise + e.gstOnFeePaise)}
+            Custom (Zero Upfront — Quoted per Engagement Letter)
           </Line>
           <Line
             label="Statutory & documentation costs"
             hint="Stamp duty on the indemnity bond, notarisation, courier: vary by state"
           >
             At actuals
-          </Line>
-          <Line label="Estimated net in-hand" strong>
-            {formatPaise(e.netPaise)}
           </Line>
         </dl>
       </div>

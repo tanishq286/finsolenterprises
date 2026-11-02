@@ -253,7 +253,7 @@ export const SCENARIO_TYPES = [
 export type ScenarioType = (typeof SCENARIO_TYPES)[number];
 
 export const SCENARIO_LABELS: Record<ScenarioType, string> = {
-  STANDARD_IEPF5: "IEPF-5 claim",
+  STANDARD_IEPF5: "Statutory Authority claim",
   DUPLICATE_LOC: "Duplicate shares (letter of confirmation)",
   DECEASED_TRANSMISSION: "Transmission after a death",
   NRI_RECOVERY: "Recovery for a holder abroad",
@@ -283,11 +283,12 @@ export const DOC_TYPE_LABELS: Record<DocType, string> = {
   CML_COPY: "Client master list (CML) of your demat account",
   CANCELLED_CHEQUE: "Cancelled cheque",
   ORIGINAL_CERT_OR_FIR: "Original certificates, or FIR for lost ones",
-  ISR1_ISR2_KYC: "Forms ISR-1 and ISR-2 (KYC and signature)",
+  ISR1_ISR2_KYC: "KYC and signature update forms (prepared by Finsol)",
   INDEMNITY_BOND: "Indemnity bond",
   DEATH_CERTIFICATE: "Death certificate",
   LEGAL_HEIR_OR_SUCCESSION_CERT: "Legal heir or succession certificate",
-  IEPF5_ACKNOWLEDGEMENT: "IEPF-5 acknowledgement (SRN)",
+  IEPF5_ACKNOWLEDGEMENT:
+    "Statutory Authority Claim & RTA Verification Filing (Prepared & Executed by Finsol) acknowledgement",
 };
 
 export const DOC_STATUSES = ["PENDING", "UPLOADED", "VERIFIED", "REJECTED"] as const;
