@@ -134,3 +134,129 @@ describe("parseRow", () => {
     expect(r?.ok && r.value.issues).toContain("WRAPPED_NAME");
   });
 });
+
+describe("November 2026: folio-led statements (Ashok Leyland layout)", () => {
+  it("does not take a PIN printed as its own run for the edge of a right-aligned amount column", () => {
+    // Address header ends at 344; "Dividend Amount" header spans 433-470.
+    // Addresses run up to ~430; a few PINs start at 348-389 after a gap;
+    // every amount starts at 441-449, inside its own header.
+    const words: PdfItem[] = [];
+    const starts = new Set<PdfItem>();
+    for (let i = 0; i < 60; i++) {
+      words.push(item("ADDRESS", 246, 160 + (i % 25)));
+      const amt = item("950.00", 441 + (i % 9), 22);
+      words.push(amt);
+      starts.add(amt);
+      if (i % 6 === 0) {
+        const pin = item("226001", 348 + (i % 3) * 20, 22);
+        words.push(pin);
+        starts.add(pin);
+      }
+    }
+    const b = gutterBetween(344, 433, words, starts, 470);
+    expect(b).toBeGreaterThan(420);
+    expect(b).toBeLessThanOrEqual(441);
+  });
+
+  it("maps 'Dividend Amount (Rs.)' and the misprinted 'Father / Husbank Name' headers", () => {
+    const { map } = mapHeaders([
+      "Folio / Demat Account No.",
+      "Shareholder Name (First / Middle / Last)",
+      "Father / Husbank Name (First / Middle / Last)",
+      "Address",
+      "Dividend Amount (Rs.)",
+      "Proposed Date of transfer to IEPF",
+    ]);
+    expect(map).toMatchObject({
+      folio: 0,
+      fullName: 1,
+      fatherFull: 2,
+      address: 3,
+      amount: 4,
+      eventDate: 5,
+    });
+  });
+
+  const headers = [
+    "Folio / Demat Account No.",
+    "Shareholder Name",
+    "Father / Husband Name",
+    "Address",
+    "Dividend Amount (Rs.)",
+    "Proposed Date of transfer to IEPF",
+  ];
+  const { map } = mapHeaders(headers);
+  const row = (folio: string, address = "50/229, HALSEY ROAD, KANPUR 208001") => [
+    folio,
+    "ASHA TESTCASE",
+    "RAM TESTCASE",
+    address,
+    "475.00",
+    "27-AUG-2023",
+  ];
+
+  it("reads the PIN from the end of the address when there is no PIN column", () => {
+    const r = parseRow(row("3739"), map, 1, "IEPF_2");
+    expect(r?.ok && r.value).toMatchObject({ pincode: "208001", state: "UTTAR_PRADESH" });
+    expect(r?.ok && r.value.issues).not.toContain("PIN_MISSING");
+  });
+
+  it("quarantines a demat account number the source cut off, but not an IN-prefixed physical folio", () => {
+    for (const cut of ["IN30011810", "IN30226", "1201060000"]) {
+      const r = parseRow(row(cut), map, 1, "IEPF_2");
+      expect(r && !r.ok && r.issues).toEqual(["FOLIO_INCOMPLETE"]);
+    }
+    for (const whole of ["IN30001110430949", "1201750200040637", "IN0170", "36966"]) {
+      expect(parseRow(row(whole), map, 1, "IEPF_2")?.ok).toBe(true);
+    }
+  });
+
+  it("treats a continued name in a folio-led table as a warning, not a quarantine", () => {
+    const r = parseRow(row("3765"), map, 1, "IEPF_2", ["NAME_CONTINUED"]);
+    expect(r?.ok && r.value.issues).toContain("NAME_CONTINUED");
+    expect(r?.ok && r.value.issues).not.toContain("WRAPPED_NAME");
+  });
+});
+
+describe("November 2026: PIN printed in the folio column (columns shifted in the source)", () => {
+  const headers = [
+    "Investor First Name",
+    "Investor Last Name",
+    "Address",
+    "State",
+    "Pin Code",
+    "Folio Number",
+    "DP Id-Client Id- Account Number",
+    "Number of shares",
+  ];
+  const { map } = mapHeaders(headers);
+  const row = (pin: string, folio: string, demat: string) => [
+    "ASHA",
+    "TESTCASE",
+    "1 TEST LANE",
+    "KARNATAKA",
+    pin,
+    folio,
+    demat,
+    "50",
+  ];
+
+  it("moves the PIN out and keeps the demat account as the identifier", () => {
+    const r = parseRow(row("", "591170", "C12010600-12010600-00488378"), map, 1, "IEPF_4");
+    expect(r?.ok && r.value).toMatchObject({
+      folio: "C12010600-12010600-00488378",
+      pincode: "591170",
+    });
+    expect(r?.ok && r.value.issues).toContain("PIN_IN_FOLIO");
+  });
+
+  it("splits a PIN glued to a physical folio", () => {
+    const r = parseRow(row("", "678007PRCM009980", ""), map, 1, "IEPF_4");
+    expect(r?.ok && r.value).toMatchObject({ folio: "PRCM009980", pincode: "678007" });
+  });
+
+  it("leaves a six-digit folio alone when the PIN column is filled", () => {
+    const r = parseRow(row("560001", "100100", ""), map, 1, "IEPF_4");
+    expect(r?.ok && r.value).toMatchObject({ folio: "100100", pincode: "560001" });
+  });
+});

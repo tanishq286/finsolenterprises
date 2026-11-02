@@ -30,7 +30,7 @@ export type StatementFormat = "xlsx" | "xls" | "csv" | "pdf";
  * 2026.11.2: PDF text runs that span two cells are split, and column
  * boundaries come from the empty gutters between columns, not header centres.
  */
-export const PARSER_VERSION = "statement-reader/2026.11.2";
+export const PARSER_VERSION = "statement-reader/2026.11.3";
 
 export function formatOf(fileName: string, contentType?: string | null): StatementFormat | null {
   const ext = /\.([a-z0-9]+)(?:$|\?)/i.exec(fileName)?.[1]?.toLowerCase();
@@ -187,6 +187,8 @@ export function gutterBetween(
   words: PdfItem[],
   /** Words that follow a gap wider than a word space on their line (possible cell starts). */
   cellStarts: ReadonlySet<PdfItem> = new Set(words),
+  /** Right edge of the next column's header, when known. */
+  nextRight?: number,
 ): number {
   if (!(right > left + 0.5)) return (left + right) / 2;
   const step = 0.25;
@@ -210,6 +212,23 @@ export function gutterBetween(
       starts.set(bin, (starts.get(bin) ?? 0) + 1);
     }
   const peak = [...starts.entries()].sort((p, q) => q[1] - p[1] || p[0] - q[0])[0];
+  // Right-aligned figures (amounts, share counts) start inside their own
+  // header's span, so nothing of that column starts between the headers. A
+  // few stray starts there (a PIN printed as its own run inside a long
+  // address) must not become the column edge: when far more cells start
+  // under the next header than at the best point between the headers, the
+  // boundary is the emptiest stretch just before that header.
+  if (nextRight !== undefined) {
+    let inside = 0;
+    for (const w of words) if (cellStarts.has(w) && w.x > right + 0.5 && w.x < nextRight) inside++;
+    if (inside >= 20 && inside >= 4 * (peak?.[1] ?? 0)) {
+      let b = counts.length - 1;
+      while (b > 0 && counts[b] !== min) b--;
+      let a = b;
+      while (a > 0 && counts[a - 1] === min) a--;
+      return (xs[a]! + xs[b]!) / 2;
+    }
+  }
   if (peak) {
     // The least-straddled stretch in the few points just left of the anchor.
     const hi = Math.min(xs.length - 1, Math.max(0, Math.floor((peak[0] - 0.75 - left) / step)));
@@ -332,9 +351,30 @@ async function readPdf(buffer: Buffer): Promise<RawTable> {
       .replace(/([a-z])- ?([a-z])/g, "$1$2"),
   );
   // Data words, split out of merged runs, decide where each column starts.
+  // Each page repeats the header; every line of it, not just the folio line, is dropped.
+  const lineText = (l: PdfLine) =>
+    l.items
+      .map((i) => i.str)
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase();
+  const headerTexts = new Set([...headerLines].map(lineText));
+  // Where a later page repeats the header, whatever sits above it on that page
+  // is page furniture (the statement's title, a letterhead), never a holder.
+  const repeatedHeaderY = new Map<number, number>();
+  for (const l of lines.slice(headerIdx + 1))
+    if (isHeaderRow(l.items.map((i) => i.str)))
+      repeatedHeaderY.set(l.page, Math.max(repeatedHeaderY.get(l.page) ?? -Infinity, l.y));
   const dataLines = lines
     .slice(headerIdx + 1)
-    .filter((l) => !headerLines.has(l) && !isHeaderRow(l.items.map((i) => i.str)));
+    .filter(
+      (l) =>
+        !headerLines.has(l) &&
+        !isHeaderRow(l.items.map((i) => i.str)) &&
+        !headerTexts.has(lineText(l)) &&
+        !(l.page !== header.page && l.y > (repeatedHeaderY.get(l.page) ?? Infinity)),
+    );
   for (const l of dataLines) l.items = l.items.flatMap(splitRun).sort((a, b) => a.x - b.x);
   const words = dataLines.flatMap((l) => l.items);
   // A word space is about half a character; a cell starts after a wider gap.
@@ -352,7 +392,7 @@ async function readPdf(buffer: Buffer): Promise<RawTable> {
   const bounds = columns.map((col, i) =>
     i === 0
       ? Number.NEGATIVE_INFINITY
-      : gutterBetween(columns[i - 1]!.right, col.left, words, cellStarts),
+      : gutterBetween(columns[i - 1]!.right, col.left, words, cellStarts, col.right),
   );
   const columnOf = (it: PdfItem) => {
     // A word belongs to the column whose left boundary it starts after.
@@ -370,15 +410,35 @@ async function readPdf(buffer: Buffer): Promise<RawTable> {
   })();
 
   // 3–4. Data lines into records.
+  const folioCol = headers.findIndex((h) => /folio/i.test(h));
   const assigned = dataLines.map((l) => ({ line: l, cells: new Map<number, PdfItem[]>() }));
   for (const a of assigned) {
     for (const it of a.line.items) {
       const c = columnOf(it);
       a.cells.set(c, [...(a.cells.get(c) ?? []), it]);
     }
+    // pdf.js runs a demat ID and the holder's first name together
+    // ("IN30039416 MATAPRASAD"); a word of letters after the ID is the name's.
+    const ids = a.cells.get(folioCol);
+    const next = folioCol + 1;
+    if (folioCol >= 0 && ids && next < headers.length && /name/i.test(headers[next]!)) {
+      const firstId = ids.findIndex((i) => /\d/.test(i.str));
+      const moved = ids.filter(
+        (i, k) => k > firstId && firstId >= 0 && /^[A-Za-z][A-Za-z.']*$/.test(i.str),
+      );
+      if (moved.length) {
+        a.cells.set(
+          folioCol,
+          ids.filter((i) => !moved.includes(i)),
+        );
+        a.cells.set(
+          next,
+          [...moved, ...(a.cells.get(next) ?? [])].sort((x, y) => x.x - y.x),
+        );
+      }
+    }
   }
   // A record starts with a name, or with its own folio (holders listed with a surname only).
-  const folioCol = headers.findIndex((h) => /folio/i.test(h));
   // A holder's first line carries its folio, amount or share count (a demat ID may
   // be centred lower in the cell, so it does not count).
   const idCols = headers
@@ -388,10 +448,51 @@ async function readPdf(buffer: Buffer): Promise<RawTable> {
     idCols.some((c) => (a.cells.get(c) ?? []).some((i) => /\d/.test(i.str)));
   const startSet = new Set<(typeof assigned)[number]>();
   const wrappedName = new Set<(typeof assigned)[number]>();
+  const continuedName = new Set<(typeof assigned)[number]>();
+  // Folio-led layouts (the folio is the first column and every holder's first
+  // line carries its folio and amount together) wrap name, address and even
+  // demat IDs onto lines with no amount: "IN30001110" over "430949" is one
+  // 16-character demat account. There, a line without a figure is never a
+  // new holder, unless it carries a folio of its own.
+  const figureCols = headers
+    .map((h, i) => (/amount|shares/i.test(h) ? i : -1))
+    .filter((i) => i >= 0);
+  const hasFigure = (a: (typeof assigned)[number]) =>
+    figureCols.some((c) => (a.cells.get(c) ?? []).some((i) => /\d/.test(i.str)));
+  const folioText = (a: (typeof assigned)[number]) =>
+    (a.cells.get(folioCol) ?? [])
+      .map((i) => i.str)
+      .join("")
+      .replace(/\s+/g, "");
+  const withFigure = assigned.filter(hasFigure);
+  const folioLed =
+    folioCol === 0 &&
+    figureCols.length > 0 &&
+    withFigure.length >= 20 &&
+    withFigure.filter((a) => /\d/.test(folioText(a))).length >= 0.95 * withFigure.length;
+  /** The rest of a demat ID whose first part is on the holder's line above. */
+  const continuesDemat = (prev: (typeof assigned)[number], cur: (typeof assigned)[number]) => {
+    const head = folioText(prev);
+    const tail = folioText(cur);
+    return (
+      /^\d+$/.test(tail) &&
+      head.length + tail.length === 16 &&
+      (/^IN[0-9A-Z]+$/i.test(head) || (/^\d+$/.test(head) && head.length >= 8))
+    );
+  };
   let prevStart: (typeof assigned)[number] | null = null;
   for (const a of assigned) {
     const folioStart = folioCol >= 0 && (a.cells.get(folioCol) ?? []).some((i) => /\d/.test(i.str));
     let start = a.cells.has(keyCol) || folioStart;
+    if (start && folioLed && !hasFigure(a)) {
+      const ownFolio =
+        folioStart &&
+        !(prevStart && prevStart.line.page === a.line.page && continuesDemat(prevStart, a));
+      if (!ownFolio) {
+        start = false;
+        if (a.cells.has(keyCol)) continuedName.add(a);
+      }
+    }
     // A name fragment with no identifier just under a holder's first line is
     // that holder's name wrapping inside its cell, not another holder.
     if (
@@ -437,9 +538,10 @@ async function readPdf(buffer: Buffer): Promise<RawTable> {
     const target = below && (a.line.y - below.line.y <= 4 || topOfBelow) ? below : (above ?? below);
     if (target && Math.abs(target.line.y - a.line.y) <= 80) members.get(target)!.push(a);
   }
-  const notes = starts.map((s) =>
-    members.get(s)!.some((m) => wrappedName.has(m)) ? ["WRAPPED_NAME"] : [],
-  );
+  const notes = starts.map((s) => [
+    ...(members.get(s)!.some((m) => wrappedName.has(m)) ? ["WRAPPED_NAME"] : []),
+    ...(members.get(s)!.some((m) => continuedName.has(m)) ? ["NAME_CONTINUED"] : []),
+  ]);
   const refs = starts.map((s) => `page ${s.line.page}, y ${Math.round(s.line.y)}`);
   const rows: unknown[][] = starts.map((s) => {
     const parts = members.get(s)!.sort((x, y) => y.line.y - x.line.y);
