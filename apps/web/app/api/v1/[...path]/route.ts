@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { API_URL, SESSION_COOKIE, WHO_COOKIE } from "@/lib/api/config";
+import { visitorHeaders } from "@/lib/api/visitor";
 
 /**
  * Backend-for-frontend: the browser calls /api/v1/*, this handler adds the
@@ -38,8 +39,7 @@ async function forward(req: NextRequest, ctx: { params: Promise<{ path: string[]
   }
   const session = req.cookies.get(SESSION_COOKIE)?.value;
   if (session) headers.set("authorization", `Bearer ${session}`);
-  const fwd = req.headers.get("x-forwarded-for");
-  if (fwd) headers.set("x-forwarded-for", fwd);
+  for (const [k, v] of Object.entries(visitorHeaders(req.headers))) headers.set(k, v);
 
   const hasBody = req.method !== "GET" && req.method !== "HEAD";
   let upstream: Response;

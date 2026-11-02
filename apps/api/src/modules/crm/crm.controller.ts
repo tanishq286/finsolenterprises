@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query } from "@nestjs/common";
+import { Throttle } from "@nestjs/throttler";
 import { CRM_STAGES, SCENARIO_TYPES } from "@finsol/shared";
 import { z } from "zod";
 
@@ -33,6 +34,16 @@ const releaseSchema = z.object({
   /** Required when another person also claims these holdings. */
   competingClaimReview: z.string().trim().min(10).max(1000).optional(),
 });
+const verifyCallSchema = z
+  .object({
+    /** What the call established, for the audit log. */
+    note: z
+      .string()
+      .trim()
+      .min(5, "Note what the call confirmed (who answered, details checked).")
+      .max(500),
+  })
+  .strict();
 const moveCaseSchema = z.object({
   caseCode: z.string(),
   column: z.enum(CASE_COLUMNS.map((c) => c.id) as [string, ...string[]]),
@@ -91,6 +102,25 @@ export class CrmController {
       body.reason,
       body.competingClaimReview,
     );
+  }
+
+  /** Records that an analyst called the number back and confirmed it. */
+  @Post("leads/:id/verify-call")
+  @HttpCode(200)
+  verifyCall(
+    @Param("id", { schema: id }) leadId: string,
+    @Body({ schema: verifyCallSchema }) body: z.infer<typeof verifyCallSchema>,
+    @CurrentUser() user: SessionClaims,
+  ) {
+    return this.crm.verifyCall(leadId, user, body.note);
+  }
+
+  /** A one-time sign-in code to read out on that call; shown once, never stored. */
+  @Post("leads/:id/sign-in-code")
+  @HttpCode(200)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  issueSignInCode(@Param("id", { schema: id }) leadId: string, @CurrentUser() user: SessionClaims) {
+    return this.crm.issueSignInCode(leadId, user);
   }
 
   /** Dragging a case card to the next column advances it one R.E.C.O.V.E.R. step. */

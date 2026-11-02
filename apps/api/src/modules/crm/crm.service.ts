@@ -22,6 +22,7 @@ import { AuditService } from "../../common/audit.service.js";
 import { PrismaService } from "../../common/prisma.service.js";
 import type { SessionClaims } from "../../common/auth/tokens.service.js";
 import { isoTime, num } from "../../common/serialize.js";
+import { OtpService } from "../auth/otp.service.js";
 
 /** Where a case lands on the board, by R.E.C.O.V.E.R. step. */
 export const CASE_COLUMNS = [
@@ -46,6 +47,7 @@ export class CrmService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly otp: OtpService,
   ) {}
 
   async team() {
@@ -108,7 +110,9 @@ export class CrmService {
           claimantName: l.claimantName,
           phone: l.phone,
           phoneMasked: maskPhone(l.phone),
-          phoneVerified: l.phoneOtpVerified,
+          phoneVerified: l.phoneOtpVerified || l.callVerifiedAt !== null,
+          /** How the number was confirmed: a texted code, or an analyst's call. */
+          phoneVerifiedBy: l.phoneOtpVerified ? "SMS" : l.callVerifiedAt ? "CALL" : null,
           relationship: l.relationshipToHolder
             ? RELATIONSHIP_LABELS[l.relationshipToHolder]
             : "Not asked yet",
@@ -291,6 +295,73 @@ export class CrmService {
     return `RC-${year}-${String(n).padStart(4, "0")}`;
   }
 
+  /**
+   * The analyst called this number back and confirmed it belongs to the
+   * claimant. Every lead on the number is marked, and the Dossiers and
+   * Deeper Traces they sent in move from PENDING_CALL_VERIFICATION to
+   * CALL_VERIFIED. What the call established goes into the audit log.
+   */
+  async verifyCall(id: string, user: SessionClaims, note: string) {
+    const lead = await this.lead(id);
+    const now = new Date();
+    const result = await this.prisma.client.$transaction(async (tx) => {
+      const leads = await tx.leadInquiry.updateMany({
+        where: { phone: lead.phone, callVerifiedAt: null },
+        data: { callVerifiedAt: now, callVerifiedById: user.sub },
+      });
+      const pending = {
+        contactVerification: "PENDING_CALL_VERIFICATION",
+        lead: { phone: lead.phone },
+      } as const;
+      const reports = await tx.valuationReport.updateMany({
+        where: pending,
+        data: { contactVerification: "CALL_VERIFIED" },
+      });
+      const traces = await tx.traceRequest.updateMany({
+        where: pending,
+        data: { contactVerification: "CALL_VERIFIED" },
+      });
+      return { leads: leads.count, reports: reports.count, traces: traces.count };
+    });
+    await this.audit.record({
+      actorId: user.sub,
+      actorRole: user.role,
+      action: "lead.verify_call",
+      entityType: "lead",
+      entityId: id,
+      data: { note, ...result },
+    });
+    const updated = await this.lead(id);
+    return {
+      id,
+      phoneVerified: true,
+      phoneVerifiedBy: updated.phoneOtpVerified ? "SMS" : "CALL",
+      callVerifiedAt: isoTime(updated.callVerifiedAt),
+      updated: result,
+    };
+  }
+
+  /**
+   * A one-time sign-in code for the analyst to read out on the verification
+   * call, so the claimant can open their account while codes cannot be
+   * texted. Only for a number already confirmed on a call.
+   */
+  async issueSignInCode(id: string, user: SessionClaims) {
+    const lead = await this.lead(id);
+    if (!lead.callVerifiedAt && !lead.phoneOtpVerified)
+      throw new ConflictException("Call the claimant and verify the number first.");
+    const issued = await this.otp.issueForCall(lead.phone, user.sub);
+    await this.audit.record({
+      actorId: user.sub,
+      actorRole: user.role,
+      action: "auth.call_code.issue",
+      entityType: "lead",
+      entityId: id,
+      data: { expiresAt: issued.expiresAt },
+    });
+    return issued;
+  }
+
   async convert(
     id: string,
     user: SessionClaims,
@@ -305,7 +376,7 @@ export class CrmService {
     const lead = await this.lead(id);
     if (lead.crmStage === "CONVERTED_TO_CASE")
       throw new ConflictException("This lead is already a case.");
-    if (!lead.phoneOtpVerified)
+    if (!lead.phoneOtpVerified && !lead.callVerifiedAt)
       throw new ConflictException("Verify the claimant's phone before opening a case.");
     if (!lead.matchedFolioIds.includes(body.folioId))
       throw new BadRequestException("Pick one of the holdings on this lead.");

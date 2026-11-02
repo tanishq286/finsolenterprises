@@ -20,7 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { callApi, ClientApiError } from "@/lib/api/client";
-import { formatDate, formatPaiseCompact } from "@/lib/format";
+import { formatDate, formatDateTime, formatPaiseCompact } from "@/lib/format";
 import type { Board, BoardColumn, CaseCard, LeadCard, TeamMember } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
 
@@ -279,11 +279,17 @@ function LeadCardView({
         <PhoneIcon className="size-3.5" aria-hidden="true" />
         {card.phone}
         {card.phoneVerified ? (
-          <BadgeCheckIcon className="size-3.5 text-confirmed" aria-label="Phone verified" />
+          <BadgeCheckIcon
+            className="size-3.5 text-confirmed"
+            aria-label={
+              card.phoneVerifiedBy === "CALL" ? "Phone verified on a call" : "Phone verified"
+            }
+          />
         ) : (
           <span className="text-pending">unverified</span>
         )}
       </a>
+      <CallVerification card={card} />
       {card.holdings.length > 0 && (
         <ul className="mt-2 grid gap-1 border-t border-(--glass-border) pt-2 text-sm">
           {card.holdings.slice(0, 3).map((h) => (
@@ -339,6 +345,92 @@ function LeadCardView({
         <p className="mt-2 text-xs text-fg-3">Claim requested {formatDate(card.unlockedAt)}</p>
       )}
     </>
+  );
+}
+
+/**
+ * Verification by phone while sign-in codes cannot be texted: the analyst
+ * calls the number, records what the call confirmed, and may then read out a
+ * one-time sign-in code so the claimant can open their account.
+ */
+function CallVerification({ card }: { card: LeadCard }) {
+  const router = useRouter();
+  const [busy, setBusy] = React.useState(false);
+  const [issued, setIssued] = React.useState<{ code: string; expiresAt: string } | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+
+  async function run(fn: () => Promise<void>) {
+    setBusy(true);
+    setError(null);
+    try {
+      await fn();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!card.phoneVerified)
+    return (
+      <div className="mt-1 text-xs">
+        <button
+          type="button"
+          className="link text-fg-2 disabled:opacity-60"
+          disabled={busy}
+          onClick={() => {
+            const note = window.prompt(
+              `You called ${card.phone}. What did the call confirm? (who answered, details checked)`,
+            );
+            if (!note?.trim()) return;
+            void run(async () => {
+              await callApi(`crm/leads/${card.id}/verify-call`, { body: { note: note.trim() } });
+              router.refresh();
+            });
+          }}
+        >
+          {busy ? "Saving…" : "Verified on a call"}
+        </button>
+        {error && <p className="text-blocker">{error}</p>}
+      </div>
+    );
+
+  return (
+    <div className="mt-1 text-xs">
+      {issued ? (
+        <p className="rounded-md border border-(--glass-border) bg-(--glass-elevated) px-2 py-1.5 text-fg-2">
+          Read out on the call:{" "}
+          <span className="font-mono text-base tracking-[0.3em] text-fg tnum">{issued.code}</span>
+          <br />
+          Works once at /login, until {formatDateTime(issued.expiresAt)}. It is not shown again.
+        </p>
+      ) : (
+        <button
+          type="button"
+          className="link text-fg-2 disabled:opacity-60"
+          disabled={busy}
+          onClick={() => {
+            if (
+              !window.confirm(
+                `Issue a one-time sign-in code for ${card.phone}? Read it out only on a call to this number.`,
+              )
+            )
+              return;
+            void run(async () => {
+              setIssued(
+                await callApi<{ code: string; expiresAt: string }>(
+                  `crm/leads/${card.id}/sign-in-code`,
+                  { method: "POST" },
+                ),
+              );
+            });
+          }}
+        >
+          {busy ? "Issuing…" : "Issue sign-in code"}
+        </button>
+      )}
+      {error && <p className="text-blocker">{error}</p>}
+    </div>
   );
 }
 

@@ -55,6 +55,7 @@ function otpService(sender: ConsoleOtpSender | DisabledOtpSender, nodeEnv = "tes
           return { id: "c1" };
         },
         update: async () => ({}),
+        findFirst: async () => null,
       },
       user: { findUnique: async () => ({ role: "INVESTOR" }) },
     },
@@ -70,7 +71,11 @@ describe("OTP without an SMS provider", () => {
     await expect(service.request("9876543210", "LOGIN", null)).rejects.toMatchObject({
       status: 503,
     });
+    // Only a code an analyst read out on a call could match; there is none here.
     await expect(service.verify("9876543210", "LOGIN", "123456")).rejects.toMatchObject({
+      status: 400,
+    });
+    await expect(service.verify("9876543210", "UNLOCK", "123456")).rejects.toMatchObject({
       status: 503,
     });
     expect(created).toHaveLength(0);
@@ -125,5 +130,25 @@ describe("database vault", () => {
     expect(Buffer.from(rows.get("cases/x/mandate.pdf")!).includes(body)).toBe(false);
     expect((await vault.get(url)).equals(body)).toBe(true);
     await expect(vault.get("db://missing")).rejects.toThrow(/not found/);
+  });
+});
+
+describe("client address vouched for by the website's server", () => {
+  const secret = "a-shared-proxy-secret-of-at-least-32-chars";
+  const req = (headers: Record<string, string>) => ({ headers }) as never;
+
+  it("is used only with the shared secret and a valid address", async () => {
+    const { vouchedClientIp } = await import("../src/common/auth/client-ip.js");
+    const ok = { "x-finsol-proxy-key": secret, "x-finsol-client-ip": "203.0.113.7" };
+    expect(vouchedClientIp(req(ok), secret)).toBe("203.0.113.7");
+    expect(vouchedClientIp(req({ ...ok, "x-finsol-client-ip": "2001:db8::1" }), secret)).toBe(
+      "2001:db8::1",
+    );
+    expect(vouchedClientIp(req({ ...ok, "x-finsol-proxy-key": "guess" }), secret)).toBeUndefined();
+    expect(
+      vouchedClientIp(req({ ...ok, "x-finsol-client-ip": "not-an-ip" }), secret),
+    ).toBeUndefined();
+    expect(vouchedClientIp(req({ "x-finsol-client-ip": "203.0.113.7" }), secret)).toBeUndefined();
+    expect(vouchedClientIp(req(ok), undefined)).toBeUndefined();
   });
 });

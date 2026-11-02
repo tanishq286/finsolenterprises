@@ -61,7 +61,7 @@ export class AuthController {
     @Body({ schema: verifySchema }) body: z.infer<typeof verifySchema>,
     @Req() req: AuthedRequest,
   ) {
-    const phone = await this.otp.verify(body.phone, "LOGIN", body.code);
+    const { phone, issuedBy } = await this.otp.verifyChallenge(body.phone, "LOGIN", body.code);
     const db = this.prisma.client;
     const known = await db.user.findUnique({ where: { phone }, select: { email: true } });
     const user = await db.user.upsert({
@@ -83,6 +83,7 @@ export class AuthController {
       entityType: "user",
       entityId: user.id,
       ip: clientIp(req),
+      ...(issuedBy ? { data: { via: "CALL_ISSUED_CODE", issuedBy } } : {}),
     });
     const session = this.tokens.signSession(user);
     return {

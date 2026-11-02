@@ -1650,7 +1650,12 @@ describe("audit regressions: search contract, quarantine and sign-in status", ()
 
   it("says whether sign-in codes can be sent, and never returns a code", async () => {
     const status = await request(http).get("/api/v1/auth/otp/status").expect(200);
-    expect(status.body).toEqual({ available: true, channel: "sms", message: null });
+    expect(status.body).toEqual({
+      available: true,
+      channel: "sms",
+      message: null,
+      callIssuedCodes: true,
+    });
     const sent = await request(http)
       .post("/api/v1/auth/otp/request")
       .send({ phone: "9876599999", purpose: "LOGIN" })
@@ -1991,6 +1996,169 @@ describe("intake without a sign-in code", () => {
       contactVerification: "PENDING_CALL_VERIFICATION",
     });
     expect(res.body.token).toBeUndefined();
+  });
+});
+
+describe("verification by call and analyst-issued sign-in codes", () => {
+  const db = () => new pg.Client({ connectionString: process.env.DATABASE_URL });
+  const setSms = (available: boolean) =>
+    Object.defineProperty(otp, "available", { value: available, configurable: true });
+  const leadId = async (phone: string) => {
+    const c = db();
+    await c.connect();
+    const r = await c.query(
+      `SELECT id FROM leads_and_inquiries WHERE phone = $1 ORDER BY created_at DESC LIMIT 1`,
+      [phone],
+    );
+    await c.end();
+    return r.rows[0].id as string;
+  };
+
+  it("verifies a number on a call, then signs the claimant in with the code read out", async () => {
+    const contact = {
+      name: "Call Verified Claimant",
+      phone: "98765 01236",
+      email: "cv@example.in",
+    };
+    setSms(false);
+    try {
+      const trace = await request(http)
+        .post("/api/v1/traces/guest")
+        .send({
+          requestId: randomUUID(),
+          holderName: "Late Shri Call Holder",
+          scope: "ALL_INDIA",
+          relationship: "SELF",
+          certificateStatus: "UNKNOWN",
+          consent: true,
+          contact,
+        })
+        .expect(201);
+      const id = await leadId("+919876501236");
+      const crm = (path: string) => request(http).post(`/api/v1/crm/leads/${id}/${path}`);
+
+      // Investors cannot do either; a code needs a verified number first.
+      await crm("verify-call").set(auth("sunita")).send({ note: "Spoke to claimant" }).expect(403);
+      await crm("sign-in-code").set(auth("analyst")).expect(409);
+      await crm("verify-call").set(auth("analyst")).send({ note: "ok" }).expect(400);
+
+      const verified = await crm("verify-call")
+        .set(auth("analyst"))
+        .send({ note: "Claimant answered; name and holding confirmed." })
+        .expect(200);
+      expect(verified.body).toMatchObject({ phoneVerified: true, phoneVerifiedBy: "CALL" });
+      expect(verified.body.updated.traces).toBeGreaterThanOrEqual(1);
+      const c = db();
+      await c.connect();
+      const row = await c.query(
+        `SELECT contact_verification FROM trace_requests WHERE reference = $1`,
+        [trace.body.reference],
+      );
+      expect(row.rows[0].contact_verification).toBe("CALL_VERIFIED");
+
+      const board = await request(http).get("/api/v1/crm/board").set(auth("analyst")).expect(200);
+      const card = board.body.columns
+        .flatMap((col: { items: { id: string }[] }) => col.items)
+        .find((i: { id: string }) => i.id === id);
+      expect(card).toMatchObject({ phoneVerified: true, phoneVerifiedBy: "CALL" });
+
+      const issued = await crm("sign-in-code").set(auth("analyst")).expect(200);
+      expect(issued.body.code).toMatch(/^\d{6}$/);
+      const stored = await c.query(
+        `SELECT code_hash, issued_by FROM otp_challenges WHERE phone = $1 ORDER BY created_at DESC LIMIT 1`,
+        ["+919876501236"],
+      );
+      await c.end();
+      expect(stored.rows[0].code_hash).not.toContain(issued.body.code);
+      expect(stored.rows[0].issued_by).toBeTruthy();
+
+      const verify = (code: string) =>
+        request(http)
+          .post("/api/v1/auth/otp/verify")
+          .send({ phone: contact.phone, code, name: contact.name, email: contact.email });
+      const wrong = issued.body.code === "000000" ? "000001" : "000000";
+      await verify(wrong).expect(400);
+      const signedIn = await verify(issued.body.code).expect(200);
+      expect(signedIn.body.token).toBeTruthy();
+      expect(signedIn.body.user).toMatchObject({ role: "INVESTOR", phone: "+919876501236" });
+      // One use only.
+      await verify(issued.body.code).expect(400);
+    } finally {
+      setSms(true);
+    }
+  });
+
+  it("accepts only analyst-issued codes while SMS is off, and never for staff numbers", async () => {
+    // A texted code issued before SMS went off is not accepted while it is off.
+    await request(http)
+      .post("/api/v1/auth/otp/request")
+      .send({ phone: "9876501237", purpose: "LOGIN" })
+      .expect(200);
+    const texted = otp.lastCode("+919876501237")!;
+    setSms(false);
+    try {
+      await request(http)
+        .post("/api/v1/auth/otp/verify")
+        .send({ phone: "9876501237", code: texted, name: "Texted", email: "t@example.in" })
+        .expect(400);
+      await request(http)
+        .post("/api/v1/auth/otp/request")
+        .send({ phone: "9876501237", purpose: "LOGIN" })
+        .expect(503);
+
+      // An analyst's own number cannot be opened with a code read out on a call.
+      await request(http)
+        .post("/api/v1/intake/callback")
+        .send({
+          contact: { name: "Staff Number", phone: "9000000002", email: "s@example.in" },
+          consent: true,
+        })
+        .expect(200);
+      const id = await leadId("+919000000002");
+      await request(http)
+        .post(`/api/v1/crm/leads/${id}/verify-call`)
+        .set(auth("legal"))
+        .send({ note: "Checking the staff-number guard." })
+        .expect(200);
+      await request(http)
+        .post(`/api/v1/crm/leads/${id}/sign-in-code`)
+        .set(auth("legal"))
+        .expect(409);
+    } finally {
+      setSms(true);
+    }
+  });
+});
+
+describe("operator command: staff sign-in code while SMS is off", () => {
+  it("opens a staff account once, and refuses client numbers", async () => {
+    const { issueStaffCode, StaffCodeRefused } = await import("../src/cli/issue-staff-code.js");
+    const { loadEnv } = await import("../src/config/env.js");
+    const env = loadEnv(process.env);
+    await expect(
+      issueStaffCode({ env, rawPhone: PHONES.sunita, confirmProduction: false }),
+    ).rejects.toBeInstanceOf(StaffCodeRefused);
+    const issued = await issueStaffCode({
+      env,
+      rawPhone: PHONES.analyst,
+      confirmProduction: false,
+    });
+    expect(issued.role).toBe("VALUATION_ANALYST");
+    Object.defineProperty(otp, "available", { value: false, configurable: true });
+    try {
+      const verify = () =>
+        request(http).post("/api/v1/auth/otp/verify").send({
+          phone: PHONES.analyst,
+          code: issued.code,
+          name: "Analyst",
+          email: "analyst@example.in",
+        });
+      const res = await verify().expect(200);
+      expect(res.body.user.role).toBe("VALUATION_ANALYST");
+      await verify().expect(400);
+    } finally {
+      Object.defineProperty(otp, "available", { value: true, configurable: true });
+    }
   });
 });
 

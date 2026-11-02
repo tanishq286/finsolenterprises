@@ -12,7 +12,8 @@
     "start:worker": "node dist/worker.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "bundle:vercel": "node scripts/bundle-vercel.mjs"
+    "bundle:vercel": "node scripts/bundle-vercel.mjs",
+    "issue:staff-code": "node dist/cli/issue-staff-code.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1160.0",

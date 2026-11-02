@@ -91,6 +91,13 @@ const schema = z
     CRON_SECRET: z.string().min(16).optional(),
     /** Set by Vercel: no long-lived process, so no timers or start-up sync. */
     VERCEL: z.string().optional(),
+    /**
+     * Shared with the website's server. A request carrying it may say which
+     * visitor it is acting for (x-finsol-client-ip), so per-visitor rate limits
+     * see visitors rather than the website's own address. Unset: the
+     * connecting address is used, as before.
+     */
+    FINSOL_PROXY_SECRET: z.string().min(32).optional(),
     /** Neon's direct (non-PgBouncer) URL, used by the search pool's session settings. */
     DATABASE_URL_UNPOOLED: z.string().optional(),
   })

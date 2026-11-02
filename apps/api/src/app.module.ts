@@ -6,7 +6,7 @@ import { Module } from "@nestjs/common";
 import type pg from "pg";
 import { APP_GUARD } from "@nestjs/core";
 import { JwtModule } from "@nestjs/jwt";
-import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
+import { ThrottlerModule } from "@nestjs/throttler";
 
 import { ENV, loadEnv, type Env } from "./config/env.js";
 import { PrewarmService } from "./common/prewarm.service.js";
@@ -23,6 +23,7 @@ import { AssociatesController } from "./modules/associates/associates.controller
 import { AssociatesService } from "./modules/associates/associates.service.js";
 import { AuthController } from "./modules/auth/auth.controller.js";
 import { OtpService } from "./modules/auth/otp.service.js";
+import { ClientIpThrottlerGuard } from "./common/auth/client-ip.js";
 import { CasesController, WebhooksController } from "./modules/cases/cases.controller.js";
 import { CasesService } from "./modules/cases/cases.service.js";
 import {
@@ -122,7 +123,7 @@ import { ValuationController } from "./modules/valuation/valuation.controller.js
     MarketService,
     EquitiesService,
     { provide: QUOTE_PROVIDERS, useFactory: defaultProviders },
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_GUARD, useClass: ClientIpThrottlerGuard },
     { provide: APP_GUARD, useClass: AuthGuard },
   ],
 })

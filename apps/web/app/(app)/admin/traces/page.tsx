@@ -105,7 +105,12 @@ export default async function TraceQueue({
                     {statusBadge(item.status)}
                     {item.contactVerification === "PENDING_CALL_VERIFICATION" && (
                       <span className="inline-flex items-center rounded-full border border-amber-500/40 bg-amber-500/10 px-2.5 py-0.5 text-xs font-semibold text-amber-700">
-                        Verify number by call
+                        Verify number by call (CRM board)
+                      </span>
+                    )}
+                    {item.contactVerification === "CALL_VERIFIED" && (
+                      <span className="inline-flex items-center rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
+                        Number verified on a call
                       </span>
                     )}
                   </div>

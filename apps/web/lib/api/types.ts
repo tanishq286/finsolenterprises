@@ -271,6 +271,9 @@ export interface LeadCard {
   phone: string;
   phoneMasked: string;
   phoneVerified: boolean;
+  /** SMS: a texted code; CALL: an analyst called the number back. */
+  phoneVerifiedBy: "SMS" | "CALL" | null;
+  intakeSource: string | null;
   relationship: string;
   certificates: string;
   estimatedValuePaise: number;

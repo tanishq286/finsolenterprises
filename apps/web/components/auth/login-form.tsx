@@ -99,7 +99,62 @@ export function LoginForm({
         </Alert>
       )}
       {paused ? (
-        <SignInFallback message="Sign-in codes by SMS are switched off while our SMS sender registration completes. Everything else works, and our team can verify your number by phone." />
+        <div className="grid gap-5">
+          <SignInFallback message="Sign-in codes by SMS are switched off while our SMS sender registration completes. Everything else works, and our team can verify your number by phone." />
+          <details
+            className="group rounded-[10px] border border-line bg-white/60 p-3"
+            data-testid="call-code"
+          >
+            <summary className="cursor-pointer text-sm font-medium text-fg">
+              A Finsol analyst gave you a sign-in code on a call?
+            </summary>
+            <form onSubmit={verify} className="mt-4 grid gap-4">
+              {(
+                [
+                  ["name", "Full name *", "name", "text"],
+                  ["phone", "Mobile number the analyst called *", "tel-national", "tel"],
+                  ["email", "Email *", "email", "email"],
+                ] as const
+              ).map(([k, label, auto, type]) => (
+                <div key={k}>
+                  <label htmlFor={id(`cc-${k}`)} className="mb-1.5 block text-sm text-fg-2">
+                    {label}
+                  </label>
+                  <Input
+                    id={id(`cc-${k}`)}
+                    required
+                    type={type === "tel" ? "text" : type}
+                    inputMode={type === "tel" ? "tel" : undefined}
+                    autoComplete={auto}
+                    maxLength={k === "phone" ? 20 : k === "name" ? 120 : 200}
+                    value={form[k]}
+                    onChange={(e) => set(k, e.target.value)}
+                    className={k === "phone" ? "tnum" : undefined}
+                  />
+                </div>
+              ))}
+              <div>
+                <label htmlFor={id("cc-code")} className="mb-1.5 block text-sm text-fg-2">
+                  6-digit code from your analyst
+                </label>
+                <Input
+                  id={id("cc-code")}
+                  required
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  value={form.code}
+                  onChange={(e) => set("code", e.target.value.replace(/\D/g, ""))}
+                  className="tnum text-center font-mono text-2xl tracking-[0.5em]"
+                />
+              </div>
+              <Button type="submit" size="lg" disabled={busy || form.code.length !== 6}>
+                {busy && <LoaderCircleIcon className="animate-spin" aria-hidden="true" />}
+                Sign in
+              </Button>
+            </form>
+          </details>
+        </div>
       ) : !sent ? (
         <form onSubmit={send} className="grid gap-4" aria-busy={paused === undefined}>
           <div>
@@ -188,8 +243,8 @@ export function LoginForm({
       <p className="mt-5 flex items-start gap-2 border-t border-(--glass-border) pt-4 text-sm text-fg-3">
         <ShieldCheckIcon className="mt-0.5 size-4 shrink-0 text-signal" aria-hidden="true" />
         <span>
-          Type the code only into this page. We never ask for it by phone, WhatsApp or email. We use
-          your details only to handle your request; see our{" "}
+          Type a code only into this page. We never ask you to read a code back to us by phone,
+          WhatsApp or email. We use your details only to handle your request; see our{" "}
           <Link href="/privacy" className="link">
             privacy notice
           </Link>{" "}

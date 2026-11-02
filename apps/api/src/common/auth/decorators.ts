@@ -16,6 +16,8 @@ export const Roles = (...roles: Role[]) => SetMetadata(ROLES, roles);
 export interface AuthedRequest extends Request {
   user?: SessionClaims;
   rawBody?: Buffer;
+  /** The visitor's address, when the website's server vouched for it (see client-ip.ts). */
+  clientIp?: string;
 }
 
 export const CurrentUser = createParamDecorator((_: unknown, ctx: ExecutionContext) => {
@@ -23,5 +25,5 @@ export const CurrentUser = createParamDecorator((_: unknown, ctx: ExecutionConte
 });
 
 export function clientIp(req: Request): string | null {
-  return req.ip ?? req.socket?.remoteAddress ?? null;
+  return (req as AuthedRequest).clientIp ?? req.ip ?? req.socket?.remoteAddress ?? null;
 }

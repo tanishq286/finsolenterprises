@@ -209,6 +209,8 @@ model User {
 
   associate         Associate?
   assignedLeads     LeadInquiry[]     @relation("LeadAnalyst")
+  callVerifiedLeads LeadInquiry[]     @relation("LeadCallVerifier")
+  issuedOtpCodes    OtpChallenge[]    @relation("OtpIssuer")
   clientCases       RecoveryCase[]    @relation("CaseClient")
   caseEvents        CaseEvent[]
   ingestionJobs     IngestionJob[]
@@ -231,7 +233,11 @@ model OtpChallenge {
   expiresAt  DateTime   @map("expires_at") @db.Timestamptz(6)
   consumedAt DateTime?  @map("consumed_at") @db.Timestamptz(6)
   requestIp  String?    @map("request_ip")
+  /// Staff member who issued this code to read out on a verification call; null for texted codes.
+  issuedBy   String?    @map("issued_by") @db.Uuid
   createdAt  DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  issuer User? @relation("OtpIssuer", fields: [issuedBy], references: [id], onDelete: SetNull)
 
   @@index([phone, purpose, createdAt(sort: Desc)])
   @@map("otp_challenges")
@@ -416,10 +422,14 @@ model LeadInquiry {
   reviewAlert          String?             @map("review_alert")
   /// VALUATION_DOSSIER, DEEPER_TRACE or CALLBACK_REQUEST for intake without a sign-in code.
   intakeSource         String?             @map("intake_source")
+  /// An analyst called this number back and confirmed it (no SMS code involved).
+  callVerifiedAt       DateTime?           @map("call_verified_at") @db.Timestamptz(6)
+  callVerifiedById     String?             @map("call_verified_by") @db.Uuid
   createdAt            DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt            DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   assignedAnalyst  User?             @relation("LeadAnalyst", fields: [assignedAnalystId], references: [id], onDelete: SetNull)
+  callVerifiedBy   User?             @relation("LeadCallVerifier", fields: [callVerifiedById], references: [id], onDelete: SetNull)
   associate        Associate?        @relation(fields: [associateId], references: [id], onDelete: SetNull)
   valuationReports ValuationReport[]
   traceRequests    TraceRequest[]

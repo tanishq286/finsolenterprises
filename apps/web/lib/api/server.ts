@@ -1,9 +1,10 @@
 import "server-only";
 
-import { cookies } from "next/headers";
+import { cookies, headers as requestHeaders } from "next/headers";
 import type { Role } from "@finsol/shared";
 
 import { API_URL, SESSION_COOKIE } from "@/lib/api/config";
+import { visitorHeaders } from "@/lib/api/visitor";
 
 export class ApiError extends Error {
   constructor(
@@ -31,6 +32,8 @@ interface ApiOptions {
   body?: unknown;
   /** Abort after this many milliseconds (ApiError status 504). */
   timeoutMs?: number;
+  /** Uncached per-visitor call: tell the API which visitor it is for (rate limits). */
+  forVisitor?: boolean;
 }
 
 /** Server-side call to the API. Throws ApiError with the API's own message. */
@@ -41,7 +44,10 @@ export async function api<T>(path: string, opts: ApiOptions = {}): Promise<T> {
     if (session) headers.authorization = `Bearer ${session}`;
   }
   if (opts.body !== undefined) headers["content-type"] = "application/json";
-  const personal = opts.session;
+  // Session calls are per-visitor and uncached already, so they say which visitor too.
+  if (opts.forVisitor ?? opts.session)
+    Object.assign(headers, visitorHeaders(await requestHeaders()));
+  const personal = opts.session || opts.forVisitor;
   let res: Response;
   try {
     res = await fetch(`${API_URL}/${path.replace(/^\//, "")}`, {

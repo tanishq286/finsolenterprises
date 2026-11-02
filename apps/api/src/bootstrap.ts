@@ -6,6 +6,7 @@ import type { NestExpressApplication } from "@nestjs/platform-express";
 import helmet from "helmet";
 
 import { AppModule } from "./app.module.js";
+import { clientIpMiddleware } from "./common/auth/client-ip.js";
 import { ENV, type Env } from "./config/env.js";
 
 // BigInt (paise totals) serialises as a number in JSON responses.
@@ -26,6 +27,7 @@ export async function createApp(
   });
   const env = app.get<Env>(ENV);
   app.set("trust proxy", 1);
+  app.use(clientIpMiddleware(env.FINSOL_PROXY_SECRET));
   app.use(helmet({ crossOriginResourcePolicy: { policy: "same-site" } }));
   app.enableCors({
     origin: env.WEB_ORIGIN.split(",").map((s) => s.trim()),
