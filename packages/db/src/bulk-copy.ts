@@ -242,8 +242,17 @@ const sumOf = (json: string) =>
   `(SELECT COALESCE(round(sum(value::numeric), 2), 0) FROM jsonb_each_text(${json}))`;
 
 /** SET clause shared by in-place updates: the new statement's facts win, amounts add up per date. */
-function mergeSet(form: Form) {
-  const custody = form === "IEPF_4" ? `'IEPF_AUTHORITY'::"CustodyStatus"` : "f.custody_status";
+/**
+ * Custody only moves forward: a later dividend list or "due for transfer" list
+ * never undoes a recorded transfer to the IEPF.
+ */
+const CUSTODY_MERGE = `CASE
+      WHEN f.custody_status = 'IEPF_AUTHORITY' OR s.custody_status = 'IEPF_AUTHORITY' THEN 'IEPF_AUTHORITY'::"CustodyStatus"
+      WHEN s.custody_status = 'DUE_FOR_IEPF_TRANSFER' THEN 'DUE_FOR_IEPF_TRANSFER'::"CustodyStatus"
+      ELSE f.custody_status END`;
+
+function mergeSet(_form: Form) {
+  const custody = CUSTODY_MERGE;
   return `
     custody_status = ${custody},
     original_shares = CASE WHEN s.original_shares > 0 THEN s.original_shares ELSE f.original_shares END,
@@ -462,10 +471,7 @@ async function rebuildOne(
   const part = `unclaimed_folios_${state.toLowerCase()}`;
   const load = `unclaimed_folios_load_${state.toLowerCase()}`;
   const lit = `'${state}'`;
-  const custody =
-    opts.form === "IEPF_4"
-      ? `CASE WHEN s.id IS NULL THEN f.custody_status ELSE 'IEPF_AUTHORITY'::"CustodyStatus" END`
-      : "f.custody_status";
+  const custody = `CASE WHEN s.id IS NULL THEN f.custody_status ELSE ${CUSTODY_MERGE} END`;
   const merged: Record<string, string> = {
     custody_status: custody,
     original_shares:

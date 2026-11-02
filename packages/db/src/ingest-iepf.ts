@@ -175,14 +175,18 @@ function fieldOf(header: string): Field | undefined {
   if (
     n.startsWith("numberofshares") ||
     n.startsWith("noofshares") ||
-    n.startsWith("numberofunderlyingshares")
+    n.startsWith("numberofunderlyingshares") ||
+    n === "noof" ||
+    n === "numberof"
   )
     return "shares";
   if (n.startsWith("investorfirstname")) return "first";
   if (n.startsWith("investormiddlename")) return "middle";
   if (n.startsWith("investorlastname")) return "last";
   if (
-    /(shareholder|investor|holder|member)s?name/.test(n) &&
+    /(?:(shareholder|investor|holder|member)s?name|name.*(shareholder|investor|holder|member))/.test(
+      n,
+    ) &&
     !/father|husband|joint|nominee/.test(n)
   )
     return "fullName";
@@ -338,7 +342,8 @@ export function parseRow(
   });
   if (!first) return fail("No investor name.");
 
-  const folio = (get("folio") || get("dematId")).replace(/\s+/g, "");
+  let folio = (get("folio") || get("dematId")).replace(/\s+/g, "");
+  folio = folio.replace(/^(?:idandclientid|clientid|foliono\.?)/i, "");
   if (!folio || folio === "-" || /^n\/?a$/i.test(folio))
     return fail("No folio number or demat account.");
 
@@ -363,7 +368,10 @@ export function parseRow(
 
   const issues: IssueCode[] = [];
   const amountCell = map.amount === undefined ? null : parseAmount(raw("amount"));
-  const sharesCell = map.shares === undefined ? null : parseAmount(raw("shares"));
+  const rawShares = raw("shares");
+  const cleanShares =
+    typeof rawShares === "string" ? rawShares.replace(/^shares\s*/i, "").trim() : rawShares;
+  const sharesCell = map.shares === undefined ? null : parseAmount(cleanShares);
   if (amountCell?.ambiguous || sharesCell?.ambiguous) issues.push("AMOUNT_AMBIGUOUS");
   let shares = sharesCell ? (sharesCell.value ?? Number.NaN) : 0;
   let amount = amountCell ? (amountCell.value ?? Number.NaN) : 0;
@@ -483,6 +491,11 @@ export interface IngestOptions {
   plan?: boolean;
   /** Where the file came from. When given, a source document and its rows are recorded. */
   source?: SourceInfo;
+  /**
+   * What a share list's quantities mean. Required for share lists imported
+   * with `source`: a list due for transfer is never recorded as transferred.
+   */
+  shareBasis?: "PROPOSED_IEPF_TRANSFER" | "TRANSFERRED_TO_IEPF";
   /** Called with progress counts every batch. */
   onProgress?: (done: number, total: number) => void;
 }
@@ -513,6 +526,11 @@ export interface IngestResult {
   preview: Omit<ParsedRow, "folio" | "address" | "fatherOrSpouseRaw">[];
   /** With dryRun + plan: the records that would be written. Holds personal data; never print it. */
   planned?: StagedFolio[];
+  /** Dividend events and share snapshots written (imports with `source` only). */
+  dividendEvents?: { written: number; amountTotal: number };
+  shareSnapshots?: number;
+  /** Sum of amounts and shares across accepted rows, for reconciliation with statement totals. */
+  totals?: { amount: number; shares: number };
 }
 
 const MAX_ERRORS_KEPT = 50;
@@ -548,6 +566,10 @@ export async function ingestStatement(
     );
   }
   const form = opts.form ?? detectForm(map);
+  if (form === "IEPF_4" && opts.source && !opts.shareBasis)
+    throw new Error(
+      "This is a share list, but whether its shares were transferred or are only due for transfer is not known. Classify the document before importing.",
+    );
 
   const companies = await db.company.findMany({
     select: { id: true, cin: true, slug: true, name: true, isin: true, legacyIsins: true },
@@ -601,6 +623,8 @@ export async function ingestStatement(
     groupKey: string | null;
   }[] = [];
   const issueCounts: Partial<Record<IssueCode, number>> = {};
+  /** Accepted lines, for dividend events and share snapshots. */
+  const accepted: { index: number; companyId: string; row: ParsedRow; folioHash: string }[] = [];
   const count = (issues: readonly IssueCode[]) => {
     for (const i of issues) issueCounts[i] = (issueCounts[i] ?? 0) + 1;
   };
@@ -637,7 +661,9 @@ export async function ingestStatement(
       return;
     }
     count(r.issues);
-    const key = `${companyId}|${blindIndex(r.folio, keys)}|${[r.first, r.middle, r.last].join(" ").toUpperCase()}`;
+    const folioHash = blindIndex(r.folio, keys);
+    accepted.push({ index: i, companyId, row: r, folioHash });
+    const key = `${companyId}|${folioHash}|${[r.first, r.middle, r.last].join(" ").toUpperCase()}`;
     outcomes.push({ index: i, issues: r.issues, status: statusOf(r.issues), groupKey: key });
     const g = groups.get(key);
     if (g) {
@@ -801,7 +827,9 @@ export async function ingestStatement(
       amountsByEvent: g.amounts,
       custodyStatus:
         form === "IEPF_4"
-          ? "IEPF_AUTHORITY"
+          ? opts.shareBasis === "PROPOSED_IEPF_TRANSFER"
+            ? "DUE_FOR_IEPF_TRANSFER"
+            : "IEPF_AUTHORITY"
           : g.shares > 0
             ? "COMPANY_SUSPENSE"
             : "PHYSICAL_DORMANT",
@@ -842,6 +870,91 @@ export async function ingestStatement(
         AND r.id = ANY (f.source_row_ids)
         AND f.source_document_id = ${sourceDocumentId}::uuid`;
   }
+  const totals = accepted.reduce(
+    (t, a) => ({ amount: t.amount + a.row.amountRupees, shares: t.shares + a.row.shares }),
+    { amount: 0, shares: 0 },
+  );
+  result.totals = { amount: Math.round(totals.amount * 100) / 100, shares: totals.shares };
+  if (sourceDocumentId) {
+    const ev = await writeDividendEvents(db, sourceDocumentId, accepted, rowIds, eventKey);
+    result.dividendEvents = ev;
+    if (opts.shareBasis)
+      result.shareSnapshots = await writeShareSnapshots(
+        db,
+        sourceDocumentId,
+        accepted,
+        rowIds,
+        opts.shareBasis,
+      );
+  }
   opts.onProgress?.(list.length, list.length);
   return result;
+}
+
+type Accepted = { index: number; companyId: string; row: ParsedRow; folioHash: string };
+const holderNorm = (r: ParsedRow) =>
+  [r.first, r.middle, r.last].filter(Boolean).join(" ").toUpperCase();
+
+/**
+ * One row per declared dividend per holder line. A republication of the same
+ * event (same holder, date and amount) adds its source instead of a new row;
+ * different dates or years stay separate.
+ */
+async function writeDividendEvents(
+  db: PrismaClient,
+  documentId: string,
+  accepted: Accepted[],
+  rowIds: Map<number, string>,
+  eventKey: (r: ParsedRow) => string,
+): Promise<{ written: number; amountTotal: number }> {
+  const rows = accepted.filter((a) => a.row.amountRupees > 0);
+  let written = 0;
+  for (let k = 0; k < rows.length; k += 2000) {
+    const chunk = rows.slice(k, k + 2000);
+    written += await db.$executeRaw`
+      INSERT INTO holder_dividend_events
+        (company_id, folio_number_hash, holder_name_norm, event_key, amount, investment_type,
+         source_document_ids, source_row_ids)
+      SELECT c::uuid, h, n, e, a::numeric, max(t), ARRAY[${documentId}::uuid],
+             COALESCE(ARRAY_AGG(r::uuid) FILTER (WHERE r IS NOT NULL), '{}'::uuid[])
+        FROM unnest(${chunk.map((a) => a.companyId)}::text[], ${chunk.map((a) => a.folioHash)}::text[],
+                    ${chunk.map((a) => holderNorm(a.row))}::text[], ${chunk.map((a) => eventKey(a.row))}::text[],
+                    ${chunk.map((a) => a.row.amountRupees.toFixed(2))}::text[],
+                    ${chunk.map((a) => a.row.investmentType)}::text[],
+                    ${chunk.map((a) => rowIds.get(a.index) ?? null)}::text[]) AS x(c, h, n, e, a, t, r)
+       GROUP BY c, h, n, e, a
+      ON CONFLICT (company_id, folio_number_hash, holder_name_norm, event_key, amount) DO UPDATE SET
+        source_document_ids = ARRAY(SELECT DISTINCT unnest(holder_dividend_events.source_document_ids || EXCLUDED.source_document_ids)),
+        source_row_ids = ARRAY(SELECT DISTINCT unnest(holder_dividend_events.source_row_ids || EXCLUDED.source_row_ids)),
+        last_seen_at = now()`;
+  }
+  return {
+    written,
+    amountTotal: Math.round(rows.reduce((t, a) => t + a.row.amountRupees, 0) * 100) / 100,
+  };
+}
+
+/** A share quantity exactly as this statement reports it, with what it means. */
+async function writeShareSnapshots(
+  db: PrismaClient,
+  documentId: string,
+  accepted: Accepted[],
+  rowIds: Map<number, string>,
+  basis: "PROPOSED_IEPF_TRANSFER" | "TRANSFERRED_TO_IEPF",
+): Promise<number> {
+  const rows = accepted.filter((a) => a.row.shares > 0);
+  let written = 0;
+  for (let k = 0; k < rows.length; k += 2000) {
+    const chunk = rows.slice(k, k + 2000);
+    written += await db.$executeRaw`
+      INSERT INTO shareholding_snapshots
+        (company_id, folio_number_hash, holder_name_norm, shares, basis, as_of, source_document_id, source_row_id)
+      SELECT c::uuid, h, n, s::int, ${basis}, d::date, ${documentId}::uuid, r::uuid
+        FROM unnest(${chunk.map((a) => a.companyId)}::text[], ${chunk.map((a) => a.folioHash)}::text[],
+                    ${chunk.map((a) => holderNorm(a.row))}::text[], ${chunk.map((a) => String(a.row.shares))}::text[],
+                    ${chunk.map((a) => a.row.eventDate?.toISOString().slice(0, 10) ?? null)}::text[],
+                    ${chunk.map((a) => rowIds.get(a.index) ?? null)}::text[]) AS x(c, h, n, s, d, r)
+      ON CONFLICT (company_id, folio_number_hash, holder_name_norm, basis, source_document_id) DO NOTHING`;
+  }
+  return written;
 }

@@ -176,13 +176,19 @@ export const RTA_LABELS: Record<RtaName, string> = {
   OTHER: "Other registrar",
 };
 
-export const CUSTODY_STATUSES = ["IEPF_AUTHORITY", "COMPANY_SUSPENSE", "PHYSICAL_DORMANT"] as const;
+export const CUSTODY_STATUSES = [
+  "IEPF_AUTHORITY",
+  "COMPANY_SUSPENSE",
+  "PHYSICAL_DORMANT",
+  "DUE_FOR_IEPF_TRANSFER",
+] as const;
 export type CustodyStatus = (typeof CUSTODY_STATUSES)[number];
 
 export const CUSTODY_LABELS: Record<CustodyStatus, string> = {
   IEPF_AUTHORITY: "With the IEPF Authority",
   COMPANY_SUSPENSE: "In the company's suspense account",
   PHYSICAL_DORMANT: "Physical shares, dividends unclaimed",
+  DUE_FOR_IEPF_TRANSFER: "Listed as due for transfer to the IEPF",
 };
 
 /**

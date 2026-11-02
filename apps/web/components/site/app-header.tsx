@@ -17,6 +17,7 @@ export async function AppHeader() {
     : isStaffRole(viewer.role)
       ? [
           { href: "/admin/crm", label: "CRM board" },
+          { href: "/admin/traces", label: "Trace requests" },
           { href: "/portal", label: "Cases" },
           { href: "/admin/companies", label: "Company files" },
           ...(viewer.role === "VALUATION_ANALYST"
@@ -35,6 +36,7 @@ export async function AppHeader() {
           ]
         : [
             { href: "/portal", label: "My cases" },
+            { href: "/traces", label: "My traces" },
             { href: "/search", label: "3-Minute Check" },
             { href: "/calculator", label: "Calculator" },
           ];

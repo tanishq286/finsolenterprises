@@ -31,6 +31,7 @@ const CUSTODY_TONE: Record<CustodyStatus, StatusTone> = {
   IEPF_AUTHORITY: "iepf",
   COMPANY_SUSPENSE: "pending",
   PHYSICAL_DORMANT: "neutral",
+  DUE_FOR_IEPF_TRANSFER: "pending",
 };
 
 const MATCH_LABEL = {

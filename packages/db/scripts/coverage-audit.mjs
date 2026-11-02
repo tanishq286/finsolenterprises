@@ -73,6 +73,25 @@ const sections = [
        (SELECT count(*) FROM ingestion_jobs)                     AS ingestion_jobs`,
   ),
   q(
+    "Baseline (statement entries are not people or folios)",
+    `WITH ev AS (
+       SELECT f.company_id, f.folio_number_hash, f.investor_full_name, e.key AS event_key
+         FROM unclaimed_folios f, jsonb_each(f.amounts_by_event) e)
+     SELECT
+       (SELECT count(*) FROM unclaimed_folios)                                     AS statement_entries,
+       (SELECT count(DISTINCT (company_id, folio_number_hash)) FROM unclaimed_folios) AS distinct_company_folio,
+       (SELECT count(*) FROM ev)                                                   AS holder_dividend_event_pairs,
+       (SELECT count(DISTINCT (company_id, event_key)) FROM ev)                    AS distinct_company_dividend_events,
+       (SELECT count(*) FROM unclaimed_folios WHERE original_shares > 0)           AS records_with_explicit_shares,
+       (SELECT count(*) FROM recovery_cases WHERE demat_credit_status = 'DONE')    AS entitlements_confirmed_by_credit,
+       (SELECT count(DISTINCT company_id) FROM unclaimed_folios)                   AS companies_with_entries,
+       (SELECT array_agg(DISTINCT transfer_financial_year ORDER BY transfer_financial_year)
+          FROM unclaimed_folios WHERE transfer_financial_year IS NOT NULL)         AS transfer_financial_years,
+       (SELECT array_agg(DISTINCT left(event_key, 4) ORDER BY left(event_key, 4)) FROM ev) AS event_years,
+       (SELECT array_agg(DISTINCT CASE WHEN original_shares > 0 THEN 'EQUITY_SHARES' ELSE 'UNCLAIMED_DIVIDEND_AMOUNT' END)
+          FROM unclaimed_folios)                                                   AS asset_classes`,
+  ),
+  q(
     "Holder records by company and custody category",
     `SELECT c.name AS company, f.custody_status, count(*) AS records,
             count(DISTINCT f.investor_cluster_id) AS record_groups,

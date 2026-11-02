@@ -4,7 +4,6 @@ import { InfoIcon, RotateCwIcon, SearchXIcon, ServerCrashIcon } from "lucide-rea
 import {
   BRAND,
   ALL_INDIA,
-  BRAND_EMAILS,
   COVERAGE_DISCLAIMER,
   isIndianState,
   STATE_LABELS,
@@ -16,6 +15,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { LiveRefresh } from "@/components/search/live-refresh";
 import { CoveragePanel } from "@/components/search/coverage-panel";
+import { DeeperTrace } from "@/components/search/deeper-trace";
 import { SearchResults } from "@/components/search/search-results";
 import { UnclaimedSearchForm } from "@/components/search/unclaimed-search-form";
 import { api, ApiError } from "@/lib/api/server";
@@ -124,32 +124,41 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
         )}
 
         {data && data.total === 0 && (
-          <div className="panel flex flex-col items-start gap-3 p-6" data-testid="search-no-match">
-            <SearchXIcon className="size-6 text-fg-3" aria-hidden="true" />
-            <h2 className="text-xl font-semibold text-fg">
-              No match for {who} in {where} in the records we hold
-            </h2>
-            <p className="max-w-[60ch] font-medium text-fg">
-              This does not mean there are no unclaimed holdings.
+          <div className="panel flex flex-col items-start gap-5 p-8 border-2 border-primary/20 bg-card shadow-sm rounded-xl" data-testid="search-no-match">
+            <div className="flex items-center gap-3">
+              <span className="flex size-11 items-center justify-center rounded-full bg-primary/10 text-primary">
+                <SearchXIcon className="size-6" aria-hidden="true" />
+              </span>
+              <div>
+                <h2 className="text-2xl font-bold text-fg">
+                  Instant Search Results for {who} in {where}
+                </h2>
+                <p className="text-sm text-fg-3">
+                  0 direct matches found in current digital index
+                </p>
+              </div>
+            </div>
+
+            <div className="w-full rounded-lg bg-primary/10 p-5 border border-primary/25">
+              <p className="text-lg font-semibold text-fg leading-relaxed">
+                &ldquo;We searched our instant index of top listed companies. Don&apos;t worry if your name wasn&apos;t found—over 3,000 older companies and physical share certificates require an archival RTA trace.&rdquo;
+              </p>
+            </div>
+
+            <p className="max-w-[75ch] text-sm text-fg-2">
+              Physical share certificates, name variations, old address discrepancies, or legacy shares held in company suspense accounts often do not appear in basic online registries. Our specialist recovery research desk can initiate an archival registry investigation at zero upfront cost.
             </p>
-            <p className="max-w-[60ch] text-fg-2">
-              We currently hold records from{" "}
-              {data.coverage.companiesWithRecordsCount === 0
-                ? "no company statements yet"
-                : data.coverage.companiesWithRecordsCount === 1
-                  ? "one company"
-                  : `${data.coverage.companiesWithRecordsCount} companies`}
-              . Try the surname alone, another spelling, or the state of an older address, or ask
-              our analysts for a free trace that looks beyond these records.
-            </p>
+
             {data.liveRefreshId && <LiveRefresh id={data.liveRefreshId} />}
-            <Button asChild variant="outline">
-              <a
-                href={`mailto:${BRAND_EMAILS.claims}?subject=${encodeURIComponent(`Free trace request: ${who}, ${where}`)}`}
-              >
-                Ask for a free deeper trace
-              </a>
-            </Button>
+
+            <div className="w-full mt-2 pt-4 border-t border-border">
+              <DeeperTrace
+                key={`${name}:${state}`}
+                holderName={name}
+                scope={state}
+                signedIn={data.access !== "public"}
+              />
+            </div>
           </div>
         )}
 

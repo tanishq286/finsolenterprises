@@ -56,7 +56,11 @@ export class ImportsService {
         throw new Error("No investor name column was found.");
       if (!companyId && map.cin === undefined && map.companyName === undefined)
         throw new Error("Choose the company, or include a CIN or company name column.");
-      form ??= map.shares !== undefined ? "IEPF_4" : "IEPF_2";
+      if (map.shares !== undefined && !form)
+        throw new Error(
+          "Share lists need an explicit IEPF_4 classification confirming completed transfer. Proposed or ambiguous lists require acquisition review.",
+        );
+      form ??= "IEPF_2";
     } catch (e) {
       throw new BadRequestException((e as Error).message);
     }
@@ -416,6 +420,8 @@ export class ImportsService {
         {
           companyId: job.companyId,
           form: job.formType,
+          // Explicit staff classification, recorded in the upload audit trail.
+          ...(job.formType === "IEPF_4" ? { shareBasis: "TRANSFERRED_TO_IEPF" as const } : {}),
           jobId: job.id,
           databaseUrl: this.prisma.databaseUrl,
           source: {

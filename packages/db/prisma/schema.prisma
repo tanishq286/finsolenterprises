@@ -89,6 +89,8 @@ enum CustodyStatus {
   IEPF_AUTHORITY
   COMPANY_SUSPENSE
   PHYSICAL_DORMANT
+  /// Listed by the company as due for transfer; not yet confirmed as transferred.
+  DUE_FOR_IEPF_TRANSFER
 }
 
 enum CorporateActionType {
@@ -722,4 +724,105 @@ model SourceRow {
   @@index([validationStatus, reviewStatus], map: "source_rows_status_idx")
   @@index([folioId], map: "source_rows_folio_idx")
   @@map("source_rows")
+}
+
+/// Issuer source register (migrations/20261106000000_acquisition). Raw SQL also maintains it.
+model SourceRegister {
+  id                  String    @id @default(uuid()) @db.Uuid
+  companyKey          String    @unique(map: "source_register_key") @map("company_key")
+  name                String
+  aliases             String[]  @default([])
+  isin                String?
+  nseSymbol           String?   @map("nse_symbol")
+  bseCode             String?   @map("bse_code")
+  cin                 String?
+  listingStatus       String    @default("LISTED") @map("listing_status")
+  companyId           String?   @map("company_id") @db.Uuid
+  website             String?
+  websiteBasis        String?   @map("website_basis")
+  irUrl               String?   @map("ir_url")
+  irUrlBasis          String?   @map("ir_url_basis")
+  registrar           String?
+  registrarContactUrl String?   @map("registrar_contact_url")
+  accessMethod        String    @default("UNKNOWN") @map("access_method")
+  bulkAccess          String    @default("NOT_ATTEMPTED") @map("bulk_access")
+  permittedUseNote    String?   @map("permitted_use_note")
+  lastAttemptAt       DateTime? @map("last_attempt_at") @db.Timestamptz(6)
+  lastResult          String?   @map("last_result")
+  lastResultDetail    String?   @map("last_result_detail")
+  nextReviewAt        DateTime? @map("next_review_at") @db.Timestamptz(6)
+  documentsFound      Int       @default(0) @map("documents_found")
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  documents RegisterDocument[]
+
+  @@index([nextReviewAt], map: "source_register_review_idx")
+  @@index([lastResult], map: "source_register_result_idx")
+  @@map("source_register")
+}
+
+model RegisterDocument {
+  id               String    @id @default(uuid()) @db.Uuid
+  registerId       String    @map("register_id") @db.Uuid
+  url              String
+  label            String?
+  foundOn          String?   @map("found_on")
+  docClass         String    @default("OTHER") @map("doc_class")
+  periodHint       String?   @map("period_hint")
+  status           String    @default("DISCOVERED")
+  statusDetail     String?   @map("status_detail")
+  httpLastModified String?   @map("http_last_modified")
+  httpEtag         String?   @map("http_etag")
+  sha256           String?
+  bytes            Int?
+  contentType      String?   @map("content_type")
+  storagePath      String?   @map("storage_path")
+  sourceDocumentId String?   @map("source_document_id") @db.Uuid
+  fetchAttempts    Int       @default(0) @map("fetch_attempts")
+  firstSeenAt      DateTime  @default(now()) @map("first_seen_at") @db.Timestamptz(6)
+  lastSeenAt       DateTime  @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+  fetchedAt        DateTime? @map("fetched_at") @db.Timestamptz(6)
+  previousSha256   String?   @map("previous_sha256")
+
+  register SourceRegister @relation(fields: [registerId], references: [id], onDelete: Restrict, map: "register_documents_register_fkey")
+
+  @@unique([registerId, url], map: "register_documents_url_key")
+  @@index([status], map: "register_documents_status_idx")
+  @@map("register_documents")
+}
+
+/// Assisted trace after a search with no match. Contact and identifiers are encrypted.
+model TraceRequest {
+  id            String   @id @default(uuid()) @db.Uuid
+  reference     String   @unique(map: "trace_requests_reference_key")
+  userId        String?  @map("user_id") @db.Uuid
+  holderName    String   @map("holder_name")
+  scope         String
+  detailsEnc    String   @map("details_enc")
+  consentAt     DateTime @map("consent_at") @db.Timestamptz(6)
+  status        String   @default("OPEN")
+  indexSnapshot Json?    @map("index_snapshot")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  checks TraceCheck[]
+
+  @@map("trace_requests")
+}
+
+model TraceCheck {
+  id            String   @id @default(uuid()) @db.Uuid
+  traceId       String   @map("trace_id") @db.Uuid
+  source        String
+  authorisation String
+  outcome       String
+  note          String?
+  checkedById   String?  @map("checked_by_id") @db.Uuid
+  checkedAt     DateTime @default(now()) @map("checked_at") @db.Timestamptz(6)
+
+  trace TraceRequest @relation(fields: [traceId], references: [id], onDelete: Restrict, map: "trace_checks_trace_fkey")
+
+  @@index([traceId, checkedAt], map: "trace_checks_trace_idx")
+  @@map("trace_checks")
 }

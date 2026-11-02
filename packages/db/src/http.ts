@@ -39,6 +39,8 @@ export async function robotsAllows(url: string): Promise<boolean> {
         signal: AbortSignal.timeout(15_000),
       });
       const type = res.headers.get("content-type") ?? "";
+      // Always settle the body: an unread body can crash undici when the server hangs up.
+      if (!(res.ok && type.includes("text/plain"))) await res.body?.cancel().catch(() => {});
       if (res.ok && type.includes("text/plain")) {
         rules = { disallow: [], allow: [] };
         let applies = false;

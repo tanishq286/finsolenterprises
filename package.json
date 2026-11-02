@@ -2,16 +2,19 @@
   "name": "finsolenterprises",
   "version": "0.2.0",
   "private": true,
+  "type": "module",
   "description": "Finsol Enterprises: unclaimed investment and IEPF share recovery platform (web, API, database, shared domain).",
   "workspaces": [
     "packages/shared",
     "packages/db",
     "apps/api",
-    "apps/web"
+    "apps/web",
+    "apps/worker"
   ],
   "scripts": {
-    "build": "npm run build -w @finsol/shared && npm run build -w @finsol/db && npm run build -w @finsol/api && npm run build -w @finsol/web",
-    "build:packages": "npm run build -w @finsol/shared && npm run build -w @finsol/db",
+    "build": "npm run build -w @finsol/shared && npm run build -w @finsol/db && npm run build -w @finsol/worker && npm run build -w @finsol/api && npm run build -w @finsol/web",
+    "build:packages": "npm run build -w @finsol/shared && npm run build -w @finsol/db && npm run build -w @finsol/worker",
+    "ingest:pan-india": "node --experimental-strip-types scripts/harvest-pan-india.ts",
     "db:start": "npm run start -w @finsol/db",
     "db:migrate": "npm run migrate -w @finsol/db",
     "db:seed": "npm run seed -w @finsol/db",
@@ -19,7 +22,7 @@
     "dev:api": "npm run dev -w @finsol/api",
     "dev:worker": "npm run dev:worker -w @finsol/api",
     "dev:web": "npm run dev -w @finsol/web",
-    "test": "npm test -w @finsol/shared && npm test -w @finsol/db && npm test -w @finsol/api",
+    "test": "npm test -w @finsol/shared && npm test -w @finsol/db && npm test -w @finsol/api && npm test -w @finsol/web",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
     "format": "prettier --write .",

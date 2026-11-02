@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { PrismaService } from "../src/common/prisma.service.js";
 import type { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import pg from "pg";
@@ -833,6 +835,18 @@ describe("associates", () => {
 });
 
 describe("IEPF-2 / IEPF-4 ingestion", () => {
+  it("rejects unclassified share uploads instead of assuming completed transfer", async () => {
+    await request(http)
+      .post("/api/v1/admin/ingestion")
+      .set(auth("admin"))
+      .field("companySlug", "reliance-industries-limited")
+      .attach(
+        "file",
+        Buffer.from("Investor First Name,Folio Number,Number of Shares\nTest,TEST123,100"),
+        { filename: "shares.csv", contentType: "text/csv" },
+      )
+      .expect(400);
+  });
   it("imports an IEPF-4 statement in the background and makes it searchable", async () => {
     const csv = [
       "Statement of shares transferred to IEPF,,,,,,,,,,,,,,,,",
@@ -1643,5 +1657,154 @@ describe("audit regressions: search contract, quarantine and sign-in status", ()
     const text = JSON.stringify(res.body);
     // No holder names or folio numbers in the dashboard payload.
     expect(text).not.toMatch(/Ramesh|Agarwal|RIL0012345621/);
+  });
+});
+
+describe("assisted traces", () => {
+  const body = {
+    requestId: randomUUID(),
+    holderName: "Trace Test Holder",
+    scope: "ALL_INDIA",
+    relationship: "SELF",
+    oldCity: "Test town",
+    consent: true,
+  };
+  let traceId: string;
+  it("requires a session and explicit consent", async () => {
+    await request(http).post("/api/v1/traces").send(body).expect(401);
+    await request(http)
+      .post("/api/v1/traces")
+      .set(auth("sunita"))
+      .send({ ...body, consent: false })
+      .expect(400);
+  });
+  it("saves encrypted details, server coverage and one reference per retry", async () => {
+    const first = await request(http)
+      .post("/api/v1/traces")
+      .set(auth("sunita"))
+      .send(body)
+      .expect(201);
+    traceId = first.body.id;
+    const again = await request(http)
+      .post("/api/v1/traces")
+      .set(auth("sunita"))
+      .send(body)
+      .expect(201);
+    expect(again.body.id).toBe(traceId);
+    expect(first.body).not.toHaveProperty("detailsEnc");
+    const stored = await app
+      .get(PrismaService)
+      .client.traceRequest.findUniqueOrThrow({ where: { id: traceId } });
+    expect(stored.detailsEnc).toMatch(/^v1:/);
+    expect(stored.holderName).not.toContain(body.holderName);
+    expect(JSON.stringify(stored.indexSnapshot)).toContain("Index coverage at request time");
+  });
+  it("isolates members and protects staff access", async () => {
+    const own = await request(http).get("/api/v1/traces").set(auth("sunita")).expect(200);
+    expect(own.body.some((r: { id: string }) => r.id === traceId)).toBe(true);
+    const other = await request(http).get("/api/v1/traces").set(auth("meera")).expect(200);
+    expect(other.body.some((r: { id: string }) => r.id === traceId)).toBe(false);
+    await request(http)
+      .post(`/api/v1/traces/${traceId}/withdraw`)
+      .set(auth("meera"))
+      .send({})
+      .expect(404);
+    await request(http).get(`/api/v1/admin/traces/${traceId}`).set(auth("meera")).expect(403);
+  });
+  it("requires recorded source evidence before closure", async () => {
+    await request(http)
+      .patch(`/api/v1/admin/traces/${traceId}`)
+      .set(auth("analyst"))
+      .send({ status: "CLOSED_FOUND" })
+      .expect(400);
+    await request(http)
+      .post(`/api/v1/admin/traces/${traceId}/checks`)
+      .set(auth("analyst"))
+      .send({
+        source: "https://issuer.example/unclaimed",
+        authorisation: "Public statutory source reviewed for this request",
+        outcome: "MATCH_FOUND",
+        note: "A candidate needing identity verification",
+      })
+      .expect(201);
+    const detail = await request(http)
+      .get(`/api/v1/admin/traces/${traceId}`)
+      .set(auth("analyst"))
+      .expect(200);
+    expect(detail.body.holderName).toBe(body.holderName);
+    expect(detail.body.checks[0].note).toBe("A candidate needing identity verification");
+    await request(http)
+      .patch(`/api/v1/admin/traces/${traceId}`)
+      .set(auth("analyst"))
+      .send({ status: "CLOSED_FOUND" })
+      .expect(200);
+  });
+  it("withdrawal prevents further checks and reopening", async () => {
+    await request(http)
+      .post(`/api/v1/traces/${traceId}/withdraw`)
+      .set(auth("sunita"))
+      .send({})
+      .expect(201);
+    await request(http)
+      .post(`/api/v1/admin/traces/${traceId}/checks`)
+      .set(auth("analyst"))
+      .send({
+        source: "https://issuer.example/list",
+        authorisation: "Previously authorised review",
+        outcome: "NO_MATCH",
+      })
+      .expect(400);
+    await request(http)
+      .patch(`/api/v1/admin/traces/${traceId}`)
+      .set(auth("analyst"))
+      .send({ status: "OPEN" })
+      .expect(400);
+  });
+});
+
+describe("durable acquisition queue", () => {
+  it("recovers an expired lease and parks an exhausted job", async () => {
+    const { work } = await import("../../../packages/db/dist/acquisition/worker.js");
+    const prisma = app.get(PrismaService);
+    const pool = new pg.Pool({ connectionString: prisma.databaseUrl });
+    const recover = randomUUID(),
+      exhausted = randomUUID();
+    try {
+      await pool.query(
+        `INSERT INTO acquisition_jobs (id, kind, target_id, status, attempts, locked_by, locked_until)
+        VALUES ($1, 'DISCOVER', $3, 'RUNNING', 1, 'stopped-worker', now() - interval '1 minute'),
+               ($2, 'DISCOVER', $4, 'RUNNING', 4, 'stopped-worker', now() - interval '1 minute')`,
+        [recover, exhausted, randomUUID(), randomUUID()],
+      );
+      const stats = await work(
+        {
+          pool,
+          db: prisma.client,
+          keys: prisma.fieldKeys,
+          databaseUrl: prisma.databaseUrl,
+          log: () => {},
+        },
+        { concurrency: 2, deadline: Date.now() + 5000, kinds: ["DISCOVER"] },
+      );
+      expect(stats["DISCOVER:missing"]).toBe(1);
+      const rows = (
+        await pool.query(
+          `SELECT id, status, attempts, locked_by FROM acquisition_jobs WHERE id = ANY($1)`,
+          [[recover, exhausted]],
+        )
+      ).rows;
+      expect(rows.find((r) => r.id === recover)).toMatchObject({
+        status: "DONE",
+        attempts: 2,
+        locked_by: null,
+      });
+      expect(rows.find((r) => r.id === exhausted)).toMatchObject({
+        status: "DEAD",
+        attempts: 4,
+        locked_by: null,
+      });
+    } finally {
+      await pool.end();
+    }
   });
 });

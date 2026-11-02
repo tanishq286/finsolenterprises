@@ -56,3 +56,6 @@ data/pan-india-drop/*
 
 # Vercel function bundle (built by apps/api/scripts/bundle-vercel.mjs)
 apps/api/bundle/
+
+# scratch/temporary work directories
+work/

@@ -1,3 +1,5 @@
+import { AdminTracesController, TracesController } from "./modules/traces/traces.controller.js";
+import { TracesService } from "./modules/traces/traces.service.js";
 import { Module } from "@nestjs/common";
 import type pg from "pg";
 import { APP_GUARD } from "@nestjs/core";
@@ -56,6 +58,8 @@ import { ValuationController } from "./modules/valuation/valuation.controller.js
     }),
   ],
   controllers: [
+    TracesController,
+    AdminTracesController,
     HealthController,
     AuthController,
     SearchController,
@@ -98,6 +102,7 @@ import { ValuationController } from "./modules/valuation/valuation.controller.js
       },
     },
     PrismaService,
+    TracesService,
     AuditService,
     PrewarmService,
     TokensService,

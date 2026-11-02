@@ -27,7 +27,8 @@
     "ingest:pan-india": "node dist/ingest-pan-india.js",
     "reprocess:sources": "node dist/cli/reprocess-sources.js",
     "audit:coverage": "node scripts/coverage-audit.mjs",
-    "test": "vitest run"
+    "test": "vitest run",
+    "acquire": "node dist/cli/acquire.js"
   },
   "dependencies": {
     "@prisma/adapter-pg": "7.10.1",
