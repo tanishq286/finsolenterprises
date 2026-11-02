@@ -11,11 +11,12 @@ import {
   Res,
 } from "@nestjs/common";
 import {
+  claimEstimate,
   describeQuote,
   maskPhone,
   MIN_PURCHASE_YEAR,
   portfolioTotals,
-  valueHolding,
+  valueEquityHolding,
   type HoldingValuation,
 } from "@finsol/shared";
 import type { Response } from "express";
@@ -46,7 +47,7 @@ const reportSchema = z.object({
 });
 
 /**
- * POST /api/v1/valuation/report: the calculator's Share Valuation Report.
+ * POST /api/v1/valuation/report: the calculator's Valuation Dossier (PDF).
  * Signed-in only (the Login Gateway verified the mobile by OTP), at most
  * VALUATION_REPORTS_PER_DAY per mobile number. Every figure is recomputed
  * here from the same price and event history the calculator shows.
@@ -80,11 +81,12 @@ export class ValuationController {
 
     const rows: HoldingValuation[] = [];
     const notes: string[] = [];
+    const quoteTimes: Date[] = [];
     for (const h of body.holdings) {
       const d = await this.equities.detail(h.symbol, h.exchange);
       const manual = h.manualPrice ?? null;
       rows.push(
-        valueHolding(
+        valueEquityHolding(
           {
             symbol: d.symbol,
             exchange: d.exchange,
@@ -94,11 +96,10 @@ export class ValuationController {
             pricePerShare: manual ?? d.price,
             priceIsManual: manual !== null,
           },
-          d.actions,
-          d.dividends,
-          d.actionsKnown,
+          d,
         ),
       );
+      if (!manual && d.priceQuoteAt) quoteTimes.push(new Date(d.priceQuoteAt));
       // The same description the calculator shows for this price.
       const q = describeQuote({
         price: manual ?? d.price,
@@ -140,7 +141,11 @@ export class ValuationController {
       preparedFor: { name: user.name, phoneMasked: maskPhone(user.phone), email: user.email },
       rows,
       totals,
+      estimate: claimEstimate(totals),
       priceNotes: notes,
+      pricesAsOf: quoteTimes.length
+        ? new Date(Math.max(...quoteTimes.map((t) => t.getTime())))
+        : null,
     });
     res
       .status(200)

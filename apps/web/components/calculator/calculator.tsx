@@ -14,16 +14,18 @@ import {
   ZapIcon,
 } from "lucide-react";
 import {
+  claimEstimate,
   describeQuote,
   MIN_PURCHASE_YEAR,
   POPULAR_EXAMPLES,
   portfolioTotals,
   VALUATION_ASSUMPTIONS,
-  valueHolding,
+  valueEquityHolding,
   type CorporateActionLike,
   type HoldingValuation,
 } from "@finsol/shared";
 
+import { CorporateActionTimeline, NetValueScorecard } from "@/components/calculator/scorecard";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,6 +55,8 @@ interface EquityDetail extends Listing {
   actions: CorporateActionLike[];
   actionsBasis: "verified" | "exchange";
   dividends: { exDate: string; amount: number }[];
+  historyFrom: string | null;
+  spinOffs: { recordDate: string; symbol: string | null; name: string; price: number | null }[];
 }
 
 interface Row {
@@ -77,20 +81,24 @@ function value(
   price: number | null,
   manual: boolean,
 ) {
-  return valueHolding(
+  return valueEquityHolding(
     {
       symbol: detail.symbol,
       exchange: detail.exchange,
       name: detail.name,
       purchaseYear: year,
       originalShares: shares,
-      pricePerShare: price,
+      pricePerShare: usablePrice(price),
       priceIsManual: manual,
     },
-    detail.actions,
-    detail.dividends,
-    detail.actionsKnown,
+    // Older API builds send neither field: no demergers, history complete.
+    { ...detail, historyFrom: detail.historyFrom ?? null, spinOffs: detail.spinOffs ?? [] },
   );
+}
+
+/** A price the calculator can use: finite and above zero, else unknown (never NaN or ₹0). */
+function usablePrice(p: number | null | undefined): number | null {
+  return typeof p === "number" && Number.isFinite(p) && p > 0 ? p : null;
 }
 
 /** The same price description the company page and the PDF use. */
@@ -139,7 +147,7 @@ function QuickTry({ onPick }: { onPick: (d: EquityDetail, year: number, shares: 
   return (
     <section aria-labelledby="quick-heading">
       <h2 id="quick-heading" className="text-sm font-medium text-fg-2">
-        Quick Try Popular High-Growth Stocks
+        Quick try: blue chips with large unclaimed holdings
       </h2>
       <ul className="mt-3 flex flex-wrap gap-2">
         {POPULAR_EXAMPLES.map((e) => {
@@ -337,13 +345,8 @@ export function Calculator() {
   }
 
   const original = Math.max(0, Math.min(10_000_000, Math.floor(Number(shares) || 0)));
-  const priceNum = price === "" ? null : Number(price);
-  const preview =
-    detail && original > 0 && priceNum !== null && Number.isFinite(priceNum)
-      ? value(detail, year, original, priceNum, manual)
-      : detail && original > 0
-        ? value(detail, year, original, null, manual)
-        : null;
+  const priceNum = usablePrice(price === "" ? null : Number(price));
+  const preview = detail && original > 0 ? value(detail, year, original, priceNum, manual) : null;
 
   function add(d = detail, y = year, s = original, p = priceNum, m = manual) {
     if (!d || s <= 0) return;
@@ -368,6 +371,8 @@ export function Calculator() {
   }
 
   const totals = portfolioTotals(rows.map((r) => r.valuation));
+  const estimate = claimEstimate(totals);
+  const [openTimeline, setOpenTimeline] = React.useState<string | null>(null);
 
   async function downloadReport() {
     // Signed-out visitors go straight to the gateway; the API checks the session either way.
@@ -480,6 +485,7 @@ export function Calculator() {
               <Button
                 type="button"
                 variant="outline"
+                className="shrink-0 whitespace-nowrap"
                 disabled={!listing || loading}
                 onClick={() => listing && void select(listing, true)}
               >
@@ -532,6 +538,7 @@ export function Calculator() {
             )}
           </p>
         )}
+        {preview && preview.timeline.length > 0 && <CorporateActionTimeline valuation={preview} />}
         {preview && preview.assumptions.length > 0 && (
           <ul className="grid gap-1 text-sm text-pending">
             {preview.assumptions.map((a) => (
@@ -557,38 +564,7 @@ export function Calculator() {
           </p>
         ) : (
           <>
-            <dl className="vault-glass grid grid-cols-1 gap-x-6 gap-y-5 rounded-[20px] p-5 sm:grid-cols-2 sm:p-6 lg:grid-cols-4">
-              <div className="sm:col-span-2 lg:col-span-1">
-                <dt className="text-sm text-fg-3">Estimated Share Value</dt>
-                <dd className="display text-gradient-cyan mt-1 text-[clamp(1.75rem,3.4vw,2.5rem)] tnum">
-                  {formatPaiseCompact(totals.totalPaise)}
-                </dd>
-                {!totals.complete && (
-                  <dd className="mt-1 text-sm text-pending">
-                    Excludes {plural(totals.unvaluedLines, "holding")} with no price.
-                  </dd>
-                )}
-              </div>
-              <div>
-                <dt className="text-sm text-fg-3">Total Current Shares</dt>
-                <dd className="mt-1 text-2xl font-semibold text-fg tnum">
-                  {formatCount(totals.currentShares)}{" "}
-                  <span className="text-base text-signal">
-                    ({growth(totals.growthMultiple)} Growth)
-                  </span>
-                </dd>
-              </div>
-              <div className="sm:col-span-2">
-                <dt className="text-sm text-fg-3">Dividends declared while held (not included)</dt>
-                <dd className="mt-1 text-2xl font-semibold text-fg tnum">
-                  {formatPaiseCompact(totals.dividendPaise)}
-                </dd>
-                <dd className="mt-1 text-sm text-fg-3">
-                  Historical figures, not confirmed unpaid. Whether any went unclaimed is checked
-                  during verification.
-                </dd>
-              </div>
-            </dl>
+            <NetValueScorecard totals={totals} estimate={estimate} />
             <ul className="grid gap-3">
               {rows.map((r) => (
                 <li
@@ -617,11 +593,33 @@ export function Calculator() {
                       · dividends declared while held {formatPaise(r.valuation.dividendPaise)} (not
                       included)
                     </p>
+                    {r.valuation.spinOffs.map((so) => (
+                      <p key={so.symbol} className="mt-1 text-sm text-fg-2 tnum">
+                        + {formatCount(so.shares)} {so.name} shares from the{" "}
+                        {so.recordDate.slice(0, 4)} demerger ·{" "}
+                        {so.marketValuePaise === null
+                          ? "no price"
+                          : formatPaiseCompact(so.marketValuePaise)}
+                      </p>
+                    ))}
                     {r.valuation.assumptions.map((a) => (
                       <p key={a} className="mt-1 text-sm text-pending">
                         {a}
                       </p>
                     ))}
+                    {r.valuation.timeline.length > 0 && (
+                      <>
+                        <button
+                          type="button"
+                          className="mt-2 text-sm font-medium text-signal underline-offset-4 hover:underline"
+                          aria-expanded={openTimeline === r.key}
+                          onClick={() => setOpenTimeline((k) => (k === r.key ? null : r.key))}
+                        >
+                          {openTimeline === r.key ? "Hide" : "Show"} corporate action timeline (
+                          {plural(r.valuation.timeline.length, "event")})
+                        </button>
+                      </>
+                    )}
                   </div>
                   <div className="flex items-center gap-3 sm:justify-end">
                     <span className="text-lg font-semibold text-fg tnum">
@@ -637,6 +635,9 @@ export function Calculator() {
                       <Trash2Icon aria-hidden="true" />
                     </Button>
                   </div>
+                  {openTimeline === r.key && (
+                    <CorporateActionTimeline valuation={r.valuation} className="sm:col-span-2" />
+                  )}
                 </li>
               ))}
             </ul>
@@ -644,12 +645,13 @@ export function Calculator() {
               <div>
                 <p className="flex items-center gap-2 font-semibold text-fg">
                   <FileTextIcon className="size-4 text-signal" aria-hidden="true" />
-                  Estimated Share Valuation (PDF)
+                  Valuation Dossier (PDF)
                 </p>
                 <p className="mt-1 text-sm text-fg-3">
-                  The same figures as above, with a Report ID, the price times and every assumption.
-                  An estimate, not a certified valuation. Free after a sign-in; two reports a day
-                  per mobile number.
+                  Branded report with a Report ID, price times, each holding&apos;s corporate action
+                  breakdown, the net value scorecard, the documents a recovery needs and the next
+                  steps. An estimate, not a certified valuation. Free after a sign-in; two a day per
+                  mobile number.
                 </p>
                 {report.message && (
                   <p className="mt-2 text-sm text-fg-2" role="status">
@@ -657,13 +659,17 @@ export function Calculator() {
                   </p>
                 )}
               </div>
-              <Button onClick={downloadReport} disabled={report.busy}>
+              <Button
+                onClick={downloadReport}
+                disabled={report.busy}
+                className="shrink-0 whitespace-nowrap"
+              >
                 {report.busy ? (
                   <LoaderCircleIcon className="animate-spin" aria-hidden="true" />
                 ) : (
                   <DownloadIcon aria-hidden="true" />
                 )}
-                Download report
+                Download Valuation Dossier
               </Button>
             </div>
             <div className="panel flex flex-col items-start gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
@@ -693,7 +699,7 @@ export function Calculator() {
       <LoginGatewayDialog
         open={gateway}
         onOpenChange={setGateway}
-        reason="to download your Estimated Share Valuation"
+        reason="to download your Valuation Dossier"
         onSignedIn={() => void downloadReport()}
       />
     </div>

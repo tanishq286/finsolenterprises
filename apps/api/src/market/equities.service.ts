@@ -8,6 +8,7 @@ import {
 import {
   REFERENCE_COMPANIES,
   CALCULATOR_STOCKS,
+  spinOffsFor,
   verifiedActionsFor,
   type CorporateActionLike,
 } from "@finsol/shared";
@@ -44,7 +45,28 @@ export interface EquityDetail extends EquityListing {
   actionsBasis: "verified" | "exchange";
   /** Cash dividends per share as paid on each ex-date (not adjusted), oldest first. */
   dividends: { exDate: string; amount: number }[];
+  /** First date the bonus/split history is verified from; null when complete since 1980. */
+  historyFrom: string | null;
+  /** Demergers: shares of new companies holders received, with each one's latest price. */
+  spinOffs: {
+    recordDate: string;
+    symbol: string | null;
+    name: string;
+    ratioFrom: number | null;
+    ratioTo: number | null;
+    source: string;
+    note: string | null;
+    price: number | null;
+    priceQuoteAt: string | null;
+    priceSource: string | null;
+  }[];
 }
+
+/** A usable price: finite and positive, else null (never NaN, never 0). */
+const realPrice = (p: unknown): number | null => {
+  const n = typeof p === "number" ? p : Number(p);
+  return Number.isFinite(n) && n > 0 ? n : null;
+};
 
 /** NSE's published equity lists; the ISIN sits in a different column in each. */
 const NSE_LISTS = [
@@ -229,17 +251,20 @@ export class EquitiesService implements OnApplicationBootstrap {
           .history(`${symbol.toUpperCase()}.${exchange === "NSE" ? "NS" : "BO"}`)
           .catch(() => null)
       : null;
-    if (!history && !verified && !company)
+    // A listed equity stays usable when the live fetch fails: its last cached price is served.
+    if (!history && !verified && !company && !listed)
       throw new NotFoundException("We could not find that equity. Check the name or symbol.");
 
-    const exchangeActions: CorporateActionLike[] = (history?.splits ?? []).map((s) => ({
-      actionType: "SPLIT",
-      exDate: s.exDate,
-      ratioFrom: s.numerator,
-      ratioTo: s.denominator,
-      notes: `Shares × ${s.numerator / s.denominator} (bonus or split, exchange record)`,
-      source: "Exchange split history (via Yahoo Finance)",
-    }));
+    const exchangeActions: CorporateActionLike[] = (history?.splits ?? [])
+      .filter((s) => s.numerator > 0 && s.denominator > 0)
+      .map((s) => ({
+        actionType: "SPLIT",
+        exDate: s.exDate,
+        ratioFrom: s.numerator,
+        ratioTo: s.denominator,
+        notes: `Shares × ${s.numerator / s.denominator} (bonus or split, exchange record)`,
+        source: "Exchange split history (via Yahoo Finance)",
+      }));
     const actions = verified?.actions ?? exchangeActions;
 
     // Yahoo scales past dividends down by its own later split ratios; scaling
@@ -247,15 +272,50 @@ export class EquitiesService implements OnApplicationBootstrap {
     const yahooFactorAfter = (date: string) =>
       (history?.splits ?? [])
         .filter((s) => s.exDate > date)
+        .filter((s) => s.numerator > 0 && s.denominator > 0)
         .reduce((f, s) => f * (s.numerator / s.denominator), 1);
     const dividends = (history?.dividends ?? []).map((d) => ({
       exDate: d.exDate,
       amount: Math.round(d.adjustedAmount * yahooFactorAfter(d.exDate) * 10_000) / 10_000,
     }));
 
-    const dbPrice = company?.currentMarketPrice ? num(company.currentMarketPrice) : null;
+    // Last real price on record: the company's, else the last quote cached for this listing.
+    const companyPrice = realPrice(
+      company?.currentMarketPrice ? num(company.currentMarketPrice) : null,
+    );
+    const listedPrice = realPrice(listed?.lastPrice ? num(listed.lastPrice) : null);
+    const stored =
+      companyPrice !== null
+        ? {
+            price: companyPrice,
+            quoteAt: company!.priceQuoteAt,
+            fetchedAt: company!.priceUpdatedAt,
+            source: company!.priceSource,
+          }
+        : listedPrice !== null
+          ? {
+              price: listedPrice,
+              quoteAt: listed!.lastPriceQuoteAt,
+              fetchedAt: listed!.lastPriceFetchedAt,
+              source: listed!.lastPriceSource,
+            }
+          : null;
+    const dbPrice = stored?.price ?? null;
     const fetchedAt = new Date();
-    const fresh = history?.price ?? null;
+    const fresh = realPrice(history?.price);
+    // Every real quote is kept on the listing, so any equity can fall back to its last close.
+    if (listed && fresh !== null)
+      await this.prisma.client.listedEquity
+        .update({
+          where: { exchange_symbol: { exchange, symbol: listed.symbol } },
+          data: {
+            lastPrice: fresh,
+            lastPriceQuoteAt: history?.tradedAt ?? null,
+            lastPriceFetchedAt: fetchedAt,
+            lastPriceSource: `Yahoo Finance (${exchange})`,
+          },
+        })
+        .catch((e: Error) => this.log.warn(`Listing price cache failed: ${e.message}`));
     // One price per company everywhere: a fresh quote newer than the stored one is
     // written through, so the company page, calculator and PDF agree.
     if (company && fresh !== null) {
@@ -286,26 +346,43 @@ export class EquitiesService implements OnApplicationBootstrap {
       price: fresh ?? dbPrice,
       priceQuoteAt: useFresh
         ? (history?.tradedAt?.toISOString() ?? null)
-        : (company?.priceQuoteAt?.toISOString() ?? null),
+        : (stored?.quoteAt?.toISOString() ?? null),
       priceRetrievedAt: useFresh
         ? fetchedAt.toISOString()
-        : (company?.priceUpdatedAt?.toISOString() ?? null),
+        : (stored?.fetchedAt?.toISOString() ?? null),
       priceUpdatedAt: useFresh
         ? fetchedAt.toISOString()
-        : (company?.priceUpdatedAt?.toISOString() ?? null),
-      priceSource: useFresh
-        ? `Yahoo Finance (${exchange})`
-        : dbPrice !== null
-          ? company!.priceSource
-          : null,
+        : (stored?.fetchedAt?.toISOString() ?? null),
+      priceSource: useFresh ? `Yahoo Finance (${exchange})` : (stored?.source ?? null),
       // A fetch that failed while an older price exists makes that price stale.
       priceError: !useFresh && this.online ? "The latest price fetch failed." : null,
       priceAttemptedAt: fetchedAt.toISOString(),
       actions,
       actionsBasis: verified ? "verified" : "exchange",
       actionsKnown: !!verified || !!history,
-      dividends,
+      dividends: dividends.filter((d) => Number.isFinite(d.amount) && d.amount > 0),
+      historyFrom: verified?.historyFrom ?? null,
+      spinOffs: [],
     };
+    // Demergers: the new companies' own prices (they have no demergers of their own here).
+    if (exchange === "NSE")
+      for (const so of spinOffsFor(symbol)) {
+        const child = so.childSymbol
+          ? await this.detail(so.childSymbol, "NSE", opts).catch(() => null)
+          : null;
+        value.spinOffs.push({
+          recordDate: so.recordDate,
+          symbol: so.childSymbol,
+          name: child?.name ?? so.childName,
+          ratioFrom: so.ratioFrom,
+          ratioTo: so.ratioTo,
+          source: so.source,
+          note: so.note ?? null,
+          price: child?.price ?? null,
+          priceQuoteAt: child?.priceQuoteAt ?? null,
+          priceSource: child?.priceSource ?? null,
+        });
+      }
     this.details.set(key, { at: Date.now(), value });
     return value;
   }

@@ -30,7 +30,8 @@ type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
 async function getJson(fetchImpl: FetchLike, url: string): Promise<unknown | null> {
   const res = await fetchImpl(url, {
     headers: { "user-agent": MARKET_USER_AGENT, accept: "application/json" },
-    signal: AbortSignal.timeout(10_000),
+    // A slow provider must not hold the calculator: past this, the last real price on record is used.
+    signal: AbortSignal.timeout(6_000),
   });
   if (!res.ok) return null;
   const type = res.headers.get("content-type") ?? "";

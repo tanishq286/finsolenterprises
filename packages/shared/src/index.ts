@@ -11,6 +11,7 @@ export * from "./reference/services.js";
 export * from "./brand.js";
 export * from "./words.js";
 export * from "./reference/calculator-stocks.js";
+export * from "./reference/spin-offs.js";
 export * from "./valuation.js";
 export * from "./identity.js";
 export * from "./market.js";

@@ -14,6 +14,12 @@ export interface CalculatorStock {
   tickerNse: string;
   tickerBse: string | null;
   actions: CorporateActionLike[];
+  /**
+   * First date the history is verified from (YYYY-MM-DD). Purchases before it
+   * are still adjusted for the events listed, with a caveat that earlier
+   * events were not confirmed. Absent: complete since 1980.
+   */
+  historyFrom?: string;
 }
 
 const VERIFIED = "Company filings, cross-checked with exchange records";
@@ -71,22 +77,36 @@ export const CALCULATOR_STOCKS: CalculatorStock[] = [
       bonus("2018-09-04", 1, 1),
     ],
   },
+  {
+    // Tata Motors Limited became Tata Motors Passenger Vehicles Limited in October 2025,
+    // when its commercial vehicles business was demerged (see spin-offs.ts).
+    symbol: "TMPV",
+    name: "Tata Motors Passenger Vehicles Limited (formerly Tata Motors Limited)",
+    tickerNse: "TMPV",
+    tickerBse: "500570",
+    // A 1995 bonus is reported with conflicting ratios, so the history is verified from 1996.
+    historyFrom: "1996-01-01",
+    actions: [split("1996-01-03", 100, 10), split("2011-09-12", 10, 2)],
+  },
 ];
 
 /** The calculator's one-click examples. Share counts and values are computed live, never typed in. */
 export const POPULAR_EXAMPLES = [
-  { symbol: "TORNTPHARM", label: "Torrent Pharma", year: 2000, shares: 100 },
-  { symbol: "EICHERMOT", label: "Eicher Motors", year: 2000, shares: 100 },
-  { symbol: "INFY", label: "Infosys", year: 1998, shares: 100 },
-  { symbol: "RELIANCE", label: "Reliance", year: 1999, shares: 100 },
-  { symbol: "TITAN", label: "Titan", year: 2000, shares: 100 },
+  { symbol: "DABUR", label: "Dabur India", year: 2000, shares: 100 },
+  { symbol: "RELIANCE", label: "Reliance", year: 1995, shares: 100 },
   { symbol: "ITC", label: "ITC", year: 2000, shares: 100 },
+  { symbol: "TMPV", label: "Tata Motors", year: 2005, shares: 100 },
+  { symbol: "INFY", label: "Infosys", year: 1998, shares: 100 },
+  { symbol: "HINDUNILVR", label: "HUL", year: 1999, shares: 100 },
 ] as const;
 
 /** Verified bonus/split history for an NSE symbol, from the catalogue or the list above. */
-export function verifiedActionsFor(
-  symbol: string,
-): { name: string; tickerBse: string | null; actions: CorporateActionLike[] } | null {
+export function verifiedActionsFor(symbol: string): {
+  name: string;
+  tickerBse: string | null;
+  actions: CorporateActionLike[];
+  historyFrom: string | null;
+} | null {
   const s = symbol.toUpperCase();
   const company = REFERENCE_COMPANIES.find((c) => c.tickerNse === s);
   if (company)
@@ -94,7 +114,15 @@ export function verifiedActionsFor(
       name: company.name,
       tickerBse: company.tickerBse,
       actions: company.actions.filter((a) => a.actionType !== "DIVIDEND"),
+      historyFrom: null,
     };
   const stock = CALCULATOR_STOCKS.find((c) => c.symbol === s);
-  return stock ? { name: stock.name, tickerBse: stock.tickerBse, actions: stock.actions } : null;
+  return stock
+    ? {
+        name: stock.name,
+        tickerBse: stock.tickerBse,
+        actions: stock.actions,
+        historyFrom: stock.historyFrom ?? null,
+      }
+    : null;
 }

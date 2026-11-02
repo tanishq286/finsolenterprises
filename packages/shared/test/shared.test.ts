@@ -244,13 +244,14 @@ describe("Finsol: words, calculator examples and service steps", () => {
         return [e.symbol, r.currentShares];
       }),
     );
+    // Checked by hand against each company's recorded bonuses and splits.
     expect(shares).toEqual({
-      TORNTPHARM: 1600,
-      EICHERMOT: 1000,
-      INFY: 25600,
-      RELIANCE: 800,
-      TITAN: 2000,
-      ITC: 4500,
+      DABUR: 600, // 2000: 1:1 (2006), 1:2 (2007), 1:1 (2010)
+      RELIANCE: 1600, // 1995: 1:1 bonuses in 1997, 2009, 2017, 2024
+      ITC: 4500, // 2000: 1:2 bonus and ₹10→₹1 split (2005), 1:1 (2010), 1:2 (2016)
+      TMPV: 500, // 2005: ₹10→₹2 split (2011)
+      INFY: 25600, // 1998: 1:1, ₹10→₹5, 3:1, then four 1:1 bonuses
+      HINDUNILVR: 1000, // 1999: ₹10→₹1 split (2000)
     });
   });
 

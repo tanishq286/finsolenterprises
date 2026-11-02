@@ -627,6 +627,11 @@ model ListedEquity {
   isin      String?
   series    String?
   updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+  /// The last real quote seen (rupees), with when the exchange printed it and when it was fetched.
+  lastPrice          Decimal?  @map("last_price") @db.Decimal(14, 2)
+  lastPriceQuoteAt   DateTime? @map("last_price_quote_at") @db.Timestamptz(6)
+  lastPriceFetchedAt DateTime? @map("last_price_fetched_at") @db.Timestamptz(6)
+  lastPriceSource    String?   @map("last_price_source")
 
   @@id([exchange, symbol])
   @@map("listed_equities")
