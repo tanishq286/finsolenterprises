@@ -32,6 +32,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { readWho } from "@/components/auth/account-link";
 import { LoginGatewayDialog } from "@/components/auth/login-gateway-dialog";
+import { DossierLeadDialog } from "@/components/calculator/dossier-lead-dialog";
 import { CHECK_CTA } from "@/components/site/cta";
 import { callApi, ClientApiError } from "@/lib/api/client";
 import { formatCount, formatPaise, formatPaiseCompact, formatPaisePlus } from "@/lib/format";
@@ -374,36 +375,35 @@ export function Calculator() {
   const estimate = claimEstimate(totals);
   const [openTimeline, setOpenTimeline] = React.useState<string | null>(null);
 
-  async function downloadReport() {
-    // Signed-out visitors go straight to the gateway; the API checks the session either way.
-    if (!readWho(document.cookie)) {
-      setGateway(true);
-      return;
-    }
+  const [leadOpen, setLeadOpen] = React.useState(false);
+
+  const holdingsBody = () =>
+    rows.map((r) => ({
+      symbol: r.valuation.symbol,
+      exchange: r.valuation.exchange,
+      purchaseYear: r.valuation.purchaseYear,
+      originalShares: r.valuation.originalShares,
+      manualPrice: r.valuation.priceIsManual ? r.valuation.pricePerShare : null,
+    }));
+
+  /** Posts the holdings, saves the PDF and reports the result. Returns the HTTP status. */
+  async function fetchReport(path: string, extra: Record<string, unknown> = {}): Promise<number> {
     setReport({ busy: true, message: null });
     try {
-      const res = await fetch("/api/v1/valuation/report", {
+      const res = await fetch(`/api/v1/${path}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         credentials: "same-origin",
-        body: JSON.stringify({
-          holdings: rows.map((r) => ({
-            symbol: r.valuation.symbol,
-            exchange: r.valuation.exchange,
-            purchaseYear: r.valuation.purchaseYear,
-            originalShares: r.valuation.originalShares,
-            manualPrice: r.valuation.priceIsManual ? r.valuation.pricePerShare : null,
-          })),
-        }),
+        body: JSON.stringify({ holdings: holdingsBody(), ...extra }),
       });
       if (res.status === 401) {
-        setGateway(true);
         setReport({ busy: false, message: null });
-        return;
+        return 401;
       }
       if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as { message?: string } | null;
-        throw new ClientApiError(res.status, body?.message ?? "The report could not be created.");
+        const body = (await res.json().catch(() => null)) as { message?: unknown } | null;
+        const m = Array.isArray(body?.message) ? body.message.join(" ") : body?.message;
+        throw new ClientApiError(res.status, m ? String(m) : "The report could not be created.");
       }
       const code = res.headers.get("x-report-code") ?? "FE-VAL";
       const left = res.headers.get("x-reports-left-today");
@@ -417,9 +417,20 @@ export function Calculator() {
         busy: false,
         message: `Report ${code} downloaded.${left !== null ? ` ${left} more today on this mobile number.` : ""}`,
       });
+      return res.status;
     } catch (e) {
       setReport({ busy: false, message: (e as Error).message });
+      return (e as ClientApiError).status ?? 500;
     }
+  }
+
+  async function downloadReport() {
+    // Signed-out visitors leave a name, mobile and email instead of a sign-in code.
+    if (!readWho(document.cookie)) {
+      setLeadOpen(true);
+      return;
+    }
+    if ((await fetchReport("valuation/report")) === 401) setLeadOpen(true);
   }
 
   return (
@@ -650,8 +661,8 @@ export function Calculator() {
                 <p className="mt-1 text-sm text-fg-3">
                   Branded report with a Report ID, price times, each holding&apos;s corporate action
                   breakdown, the net value scorecard, the documents a recovery needs and the next
-                  steps. An estimate, not a certified valuation. Free after a sign-in; two a day per
-                  mobile number.
+                  steps. An estimate, not a certified valuation. Free: just your name, mobile and
+                  email, no code needed; two a day per mobile number.
                 </p>
                 {report.message && (
                   <p className="mt-2 text-sm text-fg-2" role="status">
@@ -701,6 +712,20 @@ export function Calculator() {
         onOpenChange={setGateway}
         reason="to download your Valuation Dossier"
         onSignedIn={() => void downloadReport()}
+      />
+      <DossierLeadDialog
+        open={leadOpen}
+        onOpenChange={setLeadOpen}
+        busy={report.busy}
+        message={report.message}
+        onSubmit={async (contact) => {
+          const status = await fetchReport("valuation/report/guest", { contact, consent: true });
+          if (status >= 200 && status < 300) setLeadOpen(false);
+        }}
+        onSignIn={() => {
+          setLeadOpen(false);
+          setGateway(true);
+        }}
       />
     </div>
   );

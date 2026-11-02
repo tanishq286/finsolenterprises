@@ -5,7 +5,15 @@ import { handleApiError } from "@/lib/api/guard";
 export const metadata = { title: "Archival Deeper Trace Requests", robots: { index: false } };
 
 interface Queue {
-  items: { id: string; reference: string; status: string; scope: string; createdAt: string }[];
+  items: {
+    id: string;
+    reference: string;
+    status: string;
+    scope: string;
+    createdAt: string;
+    /** PENDING_CALL_VERIFICATION when the request came in without a sign-in code. */
+    contactVerification?: string;
+  }[];
   total: number;
   page: number;
 }
@@ -69,12 +77,15 @@ export default async function TraceQueue({
             Archival Deeper Trace Requests
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Staff CRM audit queue for zero-match searches requiring manual RTA microfilm and physical certificate trace.
+            Staff CRM audit queue for zero-match searches requiring manual RTA microfilm and
+            physical certificate trace.
           </p>
         </div>
         <div className="rounded-lg bg-card border border-border px-4 py-2 text-right">
           <div className="text-2xl font-bold text-foreground">{data.total}</div>
-          <div className="text-xs text-muted-foreground uppercase font-semibold">Active Inquiries</div>
+          <div className="text-xs text-muted-foreground uppercase font-semibold">
+            Active Inquiries
+          </div>
         </div>
       </div>
 
@@ -92,9 +103,18 @@ export default async function TraceQueue({
                       {item.reference}
                     </Link>
                     {statusBadge(item.status)}
+                    {item.contactVerification === "PENDING_CALL_VERIFICATION" && (
+                      <span className="inline-flex items-center rounded-full border border-amber-500/40 bg-amber-500/10 px-2.5 py-0.5 text-xs font-semibold text-amber-700">
+                        Verify number by call
+                      </span>
+                    )}
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Scope: <span className="font-medium text-foreground">{item.scope.replaceAll("_", " ")}</span> · Submitted:{" "}
+                    Scope:{" "}
+                    <span className="font-medium text-foreground">
+                      {item.scope.replaceAll("_", " ")}
+                    </span>{" "}
+                    · Submitted:{" "}
                     {new Date(item.createdAt).toLocaleDateString("en-IN", {
                       day: "numeric",
                       month: "short",
@@ -128,7 +148,10 @@ export default async function TraceQueue({
       <nav aria-label="Request pages" className="flex items-center justify-between gap-6 mt-6">
         <div>
           {page > 1 && (
-            <Link className="text-sm font-medium text-primary hover:underline" href={`/admin/traces?page=${page - 1}`}>
+            <Link
+              className="text-sm font-medium text-primary hover:underline"
+              href={`/admin/traces?page=${page - 1}`}
+            >
               ← Previous page
             </Link>
           )}
@@ -138,7 +161,10 @@ export default async function TraceQueue({
         </div>
         <div>
           {page * 50 < data.total && (
-            <Link className="text-sm font-medium text-primary hover:underline" href={`/admin/traces?page=${page + 1}`}>
+            <Link
+              className="text-sm font-medium text-primary hover:underline"
+              href={`/admin/traces?page=${page + 1}`}
+            >
               Next page →
             </Link>
           )}

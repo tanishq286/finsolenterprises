@@ -36,7 +36,13 @@ const ascii = (s: string) =>
 export interface ValuationReportInput {
   reportCode: string;
   issuedAt: Date;
-  preparedFor: { name: string; phoneMasked: string; email: string | null };
+  preparedFor: {
+    name: string;
+    phoneMasked: string;
+    email: string | null;
+    /** Given without a sign-in code: Finsol confirms the number by phone. */
+    unverified?: boolean;
+  };
   rows: HoldingValuation[];
   totals: PortfolioTotals;
   estimate: ClaimEstimate;
@@ -214,6 +220,16 @@ export async function buildValuationPdf(r: ValuationReportInput): Promise<Buffer
     font,
     MUTED,
   );
+  if (r.preparedFor.unverified) {
+    w.y -= 12;
+    w.text(
+      "Contact details as given; a Finsol analyst confirms them by phone before any work starts.",
+      M,
+      9,
+      font,
+      MUTED,
+    );
+  }
   w.y -= 12;
   w.text(
     r.pricesAsOf

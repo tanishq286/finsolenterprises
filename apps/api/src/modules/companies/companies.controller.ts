@@ -1,5 +1,6 @@
 import { Controller, Get, NotFoundException, Param, Query } from "@nestjs/common";
-import { RTA_LABELS } from "@finsol/shared";
+import { Prisma } from "@finsol/db";
+import { RECOVERABLE_SHARES_SQL, RTA_LABELS, type CustodyStatus } from "@finsol/shared";
 import { z } from "zod";
 
 import { Public, Roles } from "../../common/auth/decorators.js";
@@ -76,19 +77,24 @@ async function loadCompany(prisma: PrismaService, slug: string) {
     include: { corporateActions: { orderBy: { exDate: "asc" } } },
   });
   if (!company) throw new NotFoundException("No company with that name in our records.");
-  const custody = await db.unclaimedFolio.groupBy({
-    by: ["custodyStatus"],
-    where: { companyId: company.id, reviewStatus: "PUBLISHED" },
-    _count: { _all: true },
-    _sum: { postActionShares: true, unclaimedDividendAmount: true },
-  });
+  // Shares count only for share records (see countsShareValue); the shares
+  // behind an unclaimed dividend still belong to the holder.
+  const custody = await db.$queryRaw<
+    { custody_status: string; folios: bigint; shares: bigint; dividend: string }[]
+  >`
+    SELECT f.custody_status::text AS custody_status, count(*) AS folios,
+           coalesce(sum(f.post_action_shares) FILTER (WHERE ${Prisma.raw(RECOVERABLE_SHARES_SQL)}), 0)::bigint AS shares,
+           coalesce(sum(f.unclaimed_dividend_amount), 0)::text AS dividend
+      FROM unclaimed_folios f
+     WHERE f.company_id = ${company.id}::uuid AND f.review_status = 'PUBLISHED'
+     GROUP BY 1`;
   return {
     company,
     records: custody.map((g) => ({
-      custodyStatus: g.custodyStatus,
-      folios: g._count._all,
-      shares: g._sum.postActionShares ?? 0,
-      dividendRupees: num(g._sum.unclaimedDividendAmount),
+      custodyStatus: g.custody_status as CustodyStatus,
+      folios: Number(g.folios),
+      shares: Number(g.shares),
+      dividendRupees: Number(g.dividend),
     })),
   };
 }

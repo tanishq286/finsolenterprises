@@ -27,6 +27,13 @@ export interface Stats {
   companyProfiles?: number;
   listedEquities?: number;
   states: number;
+  /** Published holder records: the headline figure. */
+  verifiedRecords?: number;
+  /** Shares with the IEPF, due for transfer or in suspense (once per folio) + listed amounts. */
+  recoverableValuePaise?: number;
+  shareValuePaise?: number;
+  unclaimedAmountsPaise?: number;
+  shareFolios?: number;
   estimatedValuePaise: number;
   activeCases: number;
   creditedCases: number;

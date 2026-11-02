@@ -222,65 +222,65 @@ model User {
 }
 
 model OtpChallenge {
-  id          String     @id @default(uuid()) @db.Uuid
-  phone       String
-  purpose     OtpPurpose
+  id         String     @id @default(uuid()) @db.Uuid
+  phone      String
+  purpose    OtpPurpose
   /// HMAC-SHA256 of the code; the code itself is never stored.
-  codeHash    String     @map("code_hash")
-  attempts    Int        @default(0)
-  expiresAt   DateTime   @map("expires_at") @db.Timestamptz(6)
-  consumedAt  DateTime?  @map("consumed_at") @db.Timestamptz(6)
-  requestIp   String?    @map("request_ip")
-  createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  codeHash   String     @map("code_hash")
+  attempts   Int        @default(0)
+  expiresAt  DateTime   @map("expires_at") @db.Timestamptz(6)
+  consumedAt DateTime?  @map("consumed_at") @db.Timestamptz(6)
+  requestIp  String?    @map("request_ip")
+  createdAt  DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
 
   @@index([phone, purpose, createdAt(sort: Desc)])
   @@map("otp_challenges")
 }
 
 model Company {
-  id                   String    @id @default(uuid()) @db.Uuid
+  id                  String    @id @default(uuid()) @db.Uuid
   /// Corporate Identity Number; null for statutory bodies (see statutory_basis).
-  cin                  String?   @unique
-  statutoryBasis       String?   @map("statutory_basis")
-  isin                 String?   @unique
+  cin                 String?   @unique
+  statutoryBasis      String?   @map("statutory_basis")
+  isin                String?   @unique
   /// Earlier ISINs (e.g. before a face-value split), still printed on old IEPF statements.
-  legacyIsins          String[]  @default([]) @map("legacy_isins")
-  name                 String
-  slug                 String    @unique
-  sector               String?
-  tickerNse            String?   @map("ticker_nse")
-  tickerBse            String?   @map("ticker_bse")
+  legacyIsins         String[]  @default([]) @map("legacy_isins")
+  name                String
+  slug                String    @unique
+  sector              String?
+  tickerNse           String?   @map("ticker_nse")
+  tickerBse           String?   @map("ticker_bse")
   /// Rupees. Written only by the market sync; null until the first successful fetch.
-  currentMarketPrice   Decimal?  @map("current_market_price") @db.Decimal(14, 2)
-  priceUpdatedAt       DateTime? @map("price_updated_at") @db.Timestamptz(6)
+  currentMarketPrice  Decimal?  @map("current_market_price") @db.Decimal(14, 2)
+  priceUpdatedAt      DateTime? @map("price_updated_at") @db.Timestamptz(6)
   /// Which feed the price came from, e.g. "NSE" or "Yahoo Finance (NSE)".
-  priceSource          String?   @map("price_source")
+  priceSource         String?   @map("price_source")
   /// When the exchange printed the price (provider timestamp). priceUpdatedAt is when we fetched it.
-  priceQuoteAt         DateTime? @map("price_quote_at") @db.Timestamptz(6)
+  priceQuoteAt        DateTime? @map("price_quote_at") @db.Timestamptz(6)
   /// Last refresh attempt, successful or not.
-  priceAttemptedAt     DateTime? @map("price_attempted_at") @db.Timestamptz(6)
+  priceAttemptedAt    DateTime? @map("price_attempted_at") @db.Timestamptz(6)
   /// Why the last attempt failed; null after a success.
-  priceError           String?   @map("price_error")
-  rtaName              RtaName   @default(OTHER) @map("rta_name")
-  rtaDisplayName       String?   @map("rta_display_name")
-  rtaAddress           String?   @map("rta_address")
-  rtaEmail             String?   @map("rta_email")
-  rtaPhone             String?   @map("rta_phone")
-  rtaWebsite           String?   @map("rta_website")
-  nodalOfficerName     String    @map("nodal_officer_name")
+  priceError          String?   @map("price_error")
+  rtaName             RtaName   @default(OTHER) @map("rta_name")
+  rtaDisplayName      String?   @map("rta_display_name")
+  rtaAddress          String?   @map("rta_address")
+  rtaEmail            String?   @map("rta_email")
+  rtaPhone            String?   @map("rta_phone")
+  rtaWebsite          String?   @map("rta_website")
+  nodalOfficerName    String    @map("nodal_officer_name")
   /// One or more addresses, separated by " / " as companies publish them.
-  nodalOfficerEmail    String?   @map("nodal_officer_email")
-  nodalOfficerPhone    String?   @map("nodal_officer_phone")
-  nodalOfficeAddress   String?   @map("nodal_office_address")
+  nodalOfficerEmail   String?   @map("nodal_officer_email")
+  nodalOfficerPhone   String?   @map("nodal_officer_phone")
+  nodalOfficeAddress  String?   @map("nodal_office_address")
   /// [{ name, email }]
-  deputyNodalOfficers  Json      @default("[]") @map("deputy_nodal_officers")
+  deputyNodalOfficers Json      @default("[]") @map("deputy_nodal_officers")
   /// Investor-relations page listing IEPF / unclaimed dividend statements.
-  irPageUrl            String?   @map("ir_page_url")
-  contactsSource       String?   @map("contacts_source")
+  irPageUrl           String?   @map("ir_page_url")
+  contactsSource      String?   @map("contacts_source")
   /// When a person last checked the registrar and nodal officer details.
-  contactsVerifiedAt   DateTime? @map("contacts_verified_at") @db.Timestamptz(6)
-  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  contactsVerifiedAt  DateTime? @map("contacts_verified_at") @db.Timestamptz(6)
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   corporateActions CorporateAction[]
   folios           UnclaimedFolio[]
@@ -312,70 +312,70 @@ model CorporateAction {
 }
 
 model UnclaimedFolio {
-  id                      String         @id @default(uuid()) @db.Uuid
-  companyId               String         @map("company_id") @db.Uuid
-  investorFirstName       String         @map("investor_first_name")
-  investorMiddleName      String?        @map("investor_middle_name")
-  investorLastName        String?        @map("investor_last_name")
-  investorFullName        String         @map("investor_full_name")
-  fatherOrSpouseName      String?        @map("father_or_spouse_name")
-  addressLine             String?        @map("address_line")
+  id                      String        @id @default(uuid()) @db.Uuid
+  companyId               String        @map("company_id") @db.Uuid
+  investorFirstName       String        @map("investor_first_name")
+  investorMiddleName      String?       @map("investor_middle_name")
+  investorLastName        String?       @map("investor_last_name")
+  investorFullName        String        @map("investor_full_name")
+  fatherOrSpouseName      String?       @map("father_or_spouse_name")
+  addressLine             String?       @map("address_line")
   city                    String?
   state                   IndianState
   pincode                 String?
   /// AES-256-GCM ciphertext (v1:iv:tag:data, base64). Never returned by the public API.
-  folioNumber             String         @map("folio_number")
+  folioNumber             String        @map("folio_number")
   /// Pre-computed teaser form, e.g. RIL***21.
-  folioNumberMasked       String         @map("folio_number_masked")
+  folioNumberMasked       String        @map("folio_number_masked")
   /// HMAC-SHA256 blind index, so imports can de-duplicate without decrypting.
-  folioNumberHash         String         @map("folio_number_hash")
-  certificateNumbers      String?        @map("certificate_numbers")
-  originalShares          Int            @default(0) @map("original_shares")
-  postActionShares        Int            @default(0) @map("post_action_shares")
+  folioNumberHash         String        @map("folio_number_hash")
+  certificateNumbers      String?       @map("certificate_numbers")
+  originalShares          Int           @default(0) @map("original_shares")
+  postActionShares        Int           @default(0) @map("post_action_shares")
   /// Rupees: the sum of amounts_by_event.
-  unclaimedDividendAmount Decimal        @default(0) @map("unclaimed_dividend_amount") @db.Decimal(14, 2)
+  unclaimedDividendAmount Decimal       @default(0) @map("unclaimed_dividend_amount") @db.Decimal(14, 2)
   /// Unclaimed amount per statement event (date or financial year) in rupees, so
   /// statements for different years add up and re-imports do not double count.
-  amountsByEvent          Json           @default("{}") @map("amounts_by_event")
-  custodyStatus           CustodyStatus  @default(IEPF_AUTHORITY) @map("custody_status")
-  transferFinancialYear   String?        @map("transfer_financial_year")
+  amountsByEvent          Json          @default("{}") @map("amounts_by_event")
+  custodyStatus           CustodyStatus @default(IEPF_AUTHORITY) @map("custody_status")
+  transferFinancialYear   String?       @map("transfer_financial_year")
   /// "Date of Event" / "Proposed Date of Transfer to IEPF" on the statement.
-  eventDate               DateTime?      @map("event_date") @db.Date
+  eventDate               DateTime?     @map("event_date") @db.Date
   /// The statement's "Investment Type", e.g. "Amount for unclaimed and unpaid dividend".
-  investmentType          String?        @map("investment_type")
-  sourceFilingSrn         String?        @map("source_filing_srn")
+  investmentType          String?       @map("investment_type")
+  sourceFilingSrn         String?       @map("source_filing_srn")
   // Search columns, written by the API and the importer from packages/shared/names.ts.
-  fullNameNorm            String         @map("full_name_norm")
-  firstNameNorm           String         @map("first_name_norm")
-  middleNameNorm          String         @default("") @map("middle_name_norm")
-  lastNameNorm            String         @default("") @map("last_name_norm")
-  firstNameKey            String         @map("first_name_key")
-  middleNameKey           String         @default("") @map("middle_name_key")
-  lastNameKey             String         @default("") @map("last_name_key")
+  fullNameNorm            String        @map("full_name_norm")
+  firstNameNorm           String        @map("first_name_norm")
+  middleNameNorm          String        @default("") @map("middle_name_norm")
+  lastNameNorm            String        @default("") @map("last_name_norm")
+  firstNameKey            String        @map("first_name_key")
+  middleNameKey           String        @default("") @map("middle_name_key")
+  lastNameKey             String        @default("") @map("last_name_key")
   /// Generated by the database from full_name_norm (word tokens, lower case).
-  nameTokens              String[]       @default(dbgenerated()) @map("name_tokens")
+  nameTokens              String[]      @default(dbgenerated()) @map("name_tokens")
   /// Generated: sha256 of name, father/spouse, PIN, city and state. Namesakes never share one.
-  investorClusterId       String         @default(dbgenerated()) @map("investor_cluster_id")
-  ingestionJobId          String?        @map("ingestion_job_id") @db.Uuid
+  investorClusterId       String        @default(dbgenerated()) @map("investor_cluster_id")
+  ingestionJobId          String?       @map("ingestion_job_id") @db.Uuid
   /// The statement this record was last imported from (see source_documents).
-  sourceDocumentId        String?        @map("source_document_id") @db.Uuid
+  sourceDocumentId        String?       @map("source_document_id") @db.Uuid
   /// source_rows behind this record (one per statement line).
-  sourceRowIds            String[]       @default([]) @map("source_row_ids") @db.Uuid
+  sourceRowIds            String[]      @default([]) @map("source_row_ids") @db.Uuid
   /// Father/spouse text as the source gave it, before placeholders were removed.
-  fatherOrSpouseRaw       String?        @map("father_or_spouse_raw")
+  fatherOrSpouseRaw       String?       @map("father_or_spouse_raw")
   /// UNVERIFIED | VALID | WARNING | QUARANTINED
-  validationStatus        String         @default("UNVERIFIED") @map("validation_status")
-  validationIssues        String[]       @default([]) @map("validation_issues")
+  validationStatus        String        @default("UNVERIFIED") @map("validation_status")
+  validationIssues        String[]      @default([]) @map("validation_issues")
   /// PUBLISHED (searchable) | QUARANTINED (awaiting review) | WITHDRAWN
-  reviewStatus            String         @default("PUBLISHED") @map("review_status")
+  reviewStatus            String        @default("PUBLISHED") @map("review_status")
   /// What original_shares means, e.g. SHARES_AS_STATED_ON_EVENT_DATE or AMOUNT_ONLY.
-  quantityBasis           String?        @map("quantity_basis")
-  quantityEffectiveDate   DateTime?      @map("quantity_effective_date") @db.Date
-  createdAt               DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt               DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+  quantityBasis           String?       @map("quantity_basis")
+  quantityEffectiveDate   DateTime?     @map("quantity_effective_date") @db.Date
+  createdAt               DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  company      Company       @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  ingestionJob IngestionJob? @relation(fields: [ingestionJobId], references: [id], onDelete: SetNull)
+  company      Company        @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  ingestionJob IngestionJob?  @relation(fields: [ingestionJobId], references: [id], onDelete: SetNull)
   cases        RecoveryCase[]
 
   // Partitioned by LIST (state); the database primary key is (id, state).
@@ -392,34 +392,38 @@ model UnclaimedFolio {
 }
 
 model LeadInquiry {
-  id                   String             @id @default(uuid()) @db.Uuid
-  claimantName         String             @map("claimant_name")
+  id                   String              @id @default(uuid()) @db.Uuid
+  claimantName         String              @map("claimant_name")
   phone                String
-  phoneOtpVerified     Boolean            @default(false) @map("phone_otp_verified")
+  phoneOtpVerified     Boolean             @default(false) @map("phone_otp_verified")
   email                String?
-  relationshipToHolder Relationship       @map("relationship_to_holder")
-  physicalCertStatus   PhysicalCertStatus @map("physical_cert_status")
-  matchedFolioIds      String[]           @default([]) @map("matched_folio_ids") @db.Uuid
+  relationshipToHolder Relationship?       @map("relationship_to_holder")
+  physicalCertStatus   PhysicalCertStatus? @map("physical_cert_status")
+  matchedFolioIds      String[]            @default([]) @map("matched_folio_ids") @db.Uuid
   /// Folio numbers an analyst has released to this client; all others stay masked.
-  releasedFolioIds     String[]           @default([]) @map("released_folio_ids") @db.Uuid
-  unlockedAt           DateTime?          @map("unlocked_at") @db.Timestamptz(6)
-  assignedAnalystId    String?            @map("assigned_analyst_id") @db.Uuid
-  crmStage             CrmStage           @default(NEW_SEARCH_LEAD) @map("crm_stage")
+  releasedFolioIds     String[]            @default([]) @map("released_folio_ids") @db.Uuid
+  unlockedAt           DateTime?           @map("unlocked_at") @db.Timestamptz(6)
+  assignedAnalystId    String?             @map("assigned_analyst_id") @db.Uuid
+  crmStage             CrmStage            @default(NEW_SEARCH_LEAD) @map("crm_stage")
   /// Search that produced the lead: {first, middle, last, state}.
-  searchContext        Json?              @map("search_context")
+  searchContext        Json?               @map("search_context")
   /// Estimated value of the matched holdings at unlock time, in paise.
-  estimatedValuePaise  BigInt             @default(0) @map("estimated_value_paise")
+  estimatedValuePaise  BigInt              @default(0) @map("estimated_value_paise")
   notes                String?
-  associateId          String?            @map("associate_id") @db.Uuid
-  convertedCaseId      String?            @unique @map("converted_case_id") @db.Uuid
+  associateId          String?             @map("associate_id") @db.Uuid
+  convertedCaseId      String?             @unique @map("converted_case_id") @db.Uuid
   /// "DUPLICATE_CLAIMANT_REVIEW" when another client already has a case on a claimed holding.
-  reviewAlert          String?            @map("review_alert")
-  createdAt            DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt            DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+  reviewAlert          String?             @map("review_alert")
+  /// VALUATION_DOSSIER, DEEPER_TRACE or CALLBACK_REQUEST for intake without a sign-in code.
+  intakeSource         String?             @map("intake_source")
+  createdAt            DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  assignedAnalyst User?         @relation("LeadAnalyst", fields: [assignedAnalystId], references: [id], onDelete: SetNull)
-  associate       Associate?    @relation(fields: [associateId], references: [id], onDelete: SetNull)
-  convertedCase   RecoveryCase? @relation(fields: [convertedCaseId], references: [id], onDelete: SetNull)
+  assignedAnalyst  User?             @relation("LeadAnalyst", fields: [assignedAnalystId], references: [id], onDelete: SetNull)
+  associate        Associate?        @relation(fields: [associateId], references: [id], onDelete: SetNull)
+  valuationReports ValuationReport[]
+  traceRequests    TraceRequest[]
+  convertedCase    RecoveryCase?     @relation(fields: [convertedCaseId], references: [id], onDelete: SetNull)
 
   @@index([crmStage, updatedAt(sort: Desc)])
   @@index([phone])
@@ -453,15 +457,15 @@ model RecoveryCase {
   createdAt               DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt               DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  client     User            @relation("CaseClient", fields: [clientUserId], references: [id], onDelete: Restrict)
-  associate  Associate?      @relation(fields: [associateId], references: [id], onDelete: SetNull)
-  company    Company         @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  client    User                    @relation("CaseClient", fields: [clientUserId], references: [id], onDelete: Restrict)
+  associate Associate?              @relation(fields: [associateId], references: [id], onDelete: SetNull)
+  company   Company                 @relation(fields: [companyId], references: [id], onDelete: Restrict)
   /// No database foreign key: the folio table is partitioned (see UnclaimedFolio).
-  folio      UnclaimedFolio? @relation(fields: [folioId], references: [id], onDelete: SetNull)
-  documents  CaseDocument[]
-  events     CaseEvent[]
-  lead       LeadInquiry?
-  ledger     CommissionLedgerEntry[]
+  folio     UnclaimedFolio?         @relation(fields: [folioId], references: [id], onDelete: SetNull)
+  documents CaseDocument[]
+  events    CaseEvent[]
+  lead      LeadInquiry?
+  ledger    CommissionLedgerEntry[]
 
   @@index([clientUserId])
   @@index([recoverStep])
@@ -553,33 +557,33 @@ model CommissionLedgerEntry {
 }
 
 model IngestionJob {
-  id           String          @id @default(uuid()) @db.Uuid
-  formType     IngestionForm   @map("form_type")
-  fileName     String          @map("file_name")
-  storageKey   String          @map("storage_key")
-  status       IngestionStatus @default(QUEUED)
-  companyId    String?         @map("company_id") @db.Uuid
+  id               String          @id @default(uuid()) @db.Uuid
+  formType         IngestionForm   @map("form_type")
+  fileName         String          @map("file_name")
+  storageKey       String          @map("storage_key")
+  status           IngestionStatus @default(QUEUED)
+  companyId        String?         @map("company_id") @db.Uuid
   /// Where the file came from: an upload, a local path or a URL.
-  sourceUrl    String?         @map("source_url")
-  totalRows    Int             @default(0) @map("total_rows")
-  insertedRows Int             @default(0) @map("inserted_rows")
-  updatedRows  Int             @default(0) @map("updated_rows")
-  skippedRows  Int             @default(0) @map("skipped_rows")
+  sourceUrl        String?         @map("source_url")
+  totalRows        Int             @default(0) @map("total_rows")
+  insertedRows     Int             @default(0) @map("inserted_rows")
+  updatedRows      Int             @default(0) @map("updated_rows")
+  skippedRows      Int             @default(0) @map("skipped_rows")
   /// First few row-level problems: [{row, message}].
-  errors       Json?
-  uploadedById String?         @map("uploaded_by_id") @db.Uuid
-  sourceDocumentId String?     @map("source_document_id") @db.Uuid
-  parserVersion    String?     @map("parser_version")
-  dryRun           Boolean     @default(false) @map("dry_run")
-  retryOfId        String?     @map("retry_of_id") @db.Uuid
-  warningRows      Int         @default(0) @map("warning_rows")
-  quarantinedRows  Int         @default(0) @map("quarantined_rows")
-  startedAt    DateTime?       @map("started_at") @db.Timestamptz(6)
-  finishedAt   DateTime?       @map("finished_at") @db.Timestamptz(6)
-  createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  errors           Json?
+  uploadedById     String?         @map("uploaded_by_id") @db.Uuid
+  sourceDocumentId String?         @map("source_document_id") @db.Uuid
+  parserVersion    String?         @map("parser_version")
+  dryRun           Boolean         @default(false) @map("dry_run")
+  retryOfId        String?         @map("retry_of_id") @db.Uuid
+  warningRows      Int             @default(0) @map("warning_rows")
+  quarantinedRows  Int             @default(0) @map("quarantined_rows")
+  startedAt        DateTime?       @map("started_at") @db.Timestamptz(6)
+  finishedAt       DateTime?       @map("finished_at") @db.Timestamptz(6)
+  createdAt        DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  uploadedBy User?            @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
-  folios     UnclaimedFolio[]
+  uploadedBy      User?            @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  folios          UnclaimedFolio[]
   sourceDocuments SourceDocument[]
 
   @@index([createdAt(sort: Desc)])
@@ -605,15 +609,19 @@ model AuditEvent {
 }
 
 model ValuationReport {
-  id              String   @id @db.Uuid
-  reportCode      String   @unique @map("report_code")
-  userId          String   @map("user_id") @db.Uuid
-  phone           String
-  holdings        Json
-  totalValuePaise BigInt   @map("total_value_paise")
-  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  id                  String   @id @db.Uuid
+  reportCode          String   @unique @map("report_code")
+  userId              String?  @map("user_id") @db.Uuid
+  phone               String
+  holdings            Json
+  totalValuePaise     BigInt   @map("total_value_paise")
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// LOGIN_OTP, PENDING_CALL_VERIFICATION or CALL_VERIFIED.
+  contactVerification String   @default("LOGIN_OTP") @map("contact_verification")
+  leadId              String?  @map("lead_id") @db.Uuid
 
-  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  user User?        @relation(fields: [userId], references: [id], onDelete: Restrict)
+  lead LeadInquiry? @relation(fields: [leadId], references: [id], onDelete: SetNull)
 
   @@index([phone, createdAt(sort: Desc)])
   @@map("valuation_reports")
@@ -621,12 +629,12 @@ model ValuationReport {
 
 /// Equity directory for the calculator, loaded from NSE's published lists.
 model ListedEquity {
-  exchange  String
-  symbol    String
-  name      String
-  isin      String?
-  series    String?
-  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+  exchange           String
+  symbol             String
+  name               String
+  isin               String?
+  series             String?
+  updatedAt          DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
   /// The last real quote seen (rupees), with when the exchange printed it and when it was fetched.
   lastPrice          Decimal?  @map("last_price") @db.Decimal(14, 2)
   lastPriceQuoteAt   DateTime? @map("last_price_quote_at") @db.Timestamptz(6)
@@ -801,19 +809,23 @@ model RegisterDocument {
 
 /// Assisted trace after a search with no match. Contact and identifiers are encrypted.
 model TraceRequest {
-  id            String   @id @default(uuid()) @db.Uuid
-  reference     String   @unique(map: "trace_requests_reference_key")
-  userId        String?  @map("user_id") @db.Uuid
-  holderName    String   @map("holder_name")
-  scope         String
-  detailsEnc    String   @map("details_enc")
-  consentAt     DateTime @map("consent_at") @db.Timestamptz(6)
-  status        String   @default("OPEN")
-  indexSnapshot Json?    @map("index_snapshot")
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+  id                  String   @id @default(uuid()) @db.Uuid
+  reference           String   @unique(map: "trace_requests_reference_key")
+  userId              String?  @map("user_id") @db.Uuid
+  holderName          String   @map("holder_name")
+  scope               String
+  detailsEnc          String   @map("details_enc")
+  consentAt           DateTime @map("consent_at") @db.Timestamptz(6)
+  status              String   @default("OPEN")
+  /// LOGIN_OTP, PENDING_CALL_VERIFICATION or CALL_VERIFIED.
+  contactVerification String   @default("LOGIN_OTP") @map("contact_verification")
+  leadId              String?  @map("lead_id") @db.Uuid
+  indexSnapshot       Json?    @map("index_snapshot")
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
 
   checks TraceCheck[]
+  lead   LeadInquiry? @relation(fields: [leadId], references: [id], onDelete: SetNull)
 
   @@map("trace_requests")
 }

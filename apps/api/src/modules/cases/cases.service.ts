@@ -21,6 +21,7 @@ import {
   CLIENT_DOC_REASONS,
   documentChecklist,
   DOC_TYPE_LABELS,
+  countsShareValue,
   holdingValuePaise,
   netRealization,
   pctToBps,
@@ -229,8 +230,13 @@ export class CasesService {
     const shares = c.folio?.postActionShares ?? 0;
     const price = c.company.currentMarketPrice === null ? null : num(c.company.currentMarketPrice);
     const estimatePaise = c.folio
-      ? holdingValuePaise(shares, price ?? 0) +
-        Math.round(num(c.folio.unclaimedDividendAmount) * 100)
+      ? (countsShareValue({
+          custodyStatus: c.folio.custodyStatus,
+          investmentType: c.folio.investmentType,
+          shares,
+        })
+          ? holdingValuePaise(shares, price ?? 0)
+          : 0) + Math.round(num(c.folio.unclaimedDividendAmount) * 100)
       : 0;
     const feePct = c.agreedSuccessFeePct === null ? null : num(c.agreedSuccessFeePct);
     const basis = c.creditedValuePaise !== null ? Number(c.creditedValuePaise) : estimatePaise;

@@ -3,6 +3,7 @@ import { decryptField, type Prisma } from "@finsol/db";
 import type { CustodyStatus, FolioState } from "@finsol/shared";
 import type pg from "pg";
 import {
+  countsShareValue,
   holdingValuePaise,
   maskCompanyName,
   maskPincode,
@@ -101,8 +102,13 @@ const MAX_CLAIM_FOLIOS = 10;
 
 export function estimateValuePaise(f: FolioWithCompany): number {
   return (
-    holdingValuePaise(f.postActionShares, num(f.company.currentMarketPrice)) +
-    Math.round(num(f.unclaimedDividendAmount) * 100)
+    (countsShareValue({
+      custodyStatus: f.custodyStatus,
+      investmentType: f.investmentType,
+      shares: f.postActionShares,
+    })
+      ? holdingValuePaise(f.postActionShares, num(f.company.currentMarketPrice))
+      : 0) + Math.round(num(f.unclaimedDividendAmount) * 100)
   );
 }
 
@@ -174,6 +180,13 @@ export class SearchService {
     const dividendPaise = Math.round(f.dividend_rupees * 100);
     // A statement that lists only an amount states no share count: unknown, not zero.
     const sharesStated = f.original_shares > 0;
+    // Only shares with the IEPF, due for transfer or in suspense are unclaimed;
+    // the shares behind an unclaimed dividend still belong to the holder.
+    const shareValue = countsShareValue({
+      custodyStatus: f.custody_status,
+      investmentType: f.investment_type,
+      shares: f.post_action_shares,
+    });
     return {
       id: f.id,
       access,
@@ -193,9 +206,9 @@ export class SearchService {
       folioReleased,
       postActionShares: open && sharesStated ? f.post_action_shares : null,
       sharesStated,
-      recordKind: sharesStated ? "SHARES" : "UNCLAIMED_AMOUNT",
+      recordKind: shareValue ? "SHARES" : "UNCLAIMED_AMOUNT",
       estimatedTotalValuePaise:
-        open && sharesStated && f.price_rupees !== null
+        open && shareValue && f.price_rupees !== null
           ? holdingValuePaise(f.post_action_shares, f.price_rupees) + dividendPaise
           : null,
       sharePricePaise: open && f.price_rupees !== null ? Math.round(f.price_rupees * 100) : null,

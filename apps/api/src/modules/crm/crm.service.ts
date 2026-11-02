@@ -109,8 +109,13 @@ export class CrmService {
           phone: l.phone,
           phoneMasked: maskPhone(l.phone),
           phoneVerified: l.phoneOtpVerified,
-          relationship: RELATIONSHIP_LABELS[l.relationshipToHolder],
-          certificates: PHYSICAL_CERT_LABELS[l.physicalCertStatus],
+          relationship: l.relationshipToHolder
+            ? RELATIONSHIP_LABELS[l.relationshipToHolder]
+            : "Not asked yet",
+          certificates: l.physicalCertStatus
+            ? PHYSICAL_CERT_LABELS[l.physicalCertStatus]
+            : "Not asked yet",
+          intakeSource: l.intakeSource,
           estimatedValuePaise: Number(l.estimatedValuePaise),
           holdings: l.matchedFolioIds.flatMap((id) => {
             const f = folios.get(id);

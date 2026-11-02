@@ -15,3 +15,4 @@ export * from "./reference/spin-offs.js";
 export * from "./valuation.js";
 export * from "./identity.js";
 export * from "./market.js";
+export * from "./recoverable.js";

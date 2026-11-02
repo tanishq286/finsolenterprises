@@ -3,6 +3,14 @@
 import { useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { CheckCircle2Icon, ChevronRightIcon, FileSearchIcon, ShieldCheckIcon } from "lucide-react";
+import {
+  ContactFields,
+  contactProblem,
+  EMPTY_CONTACT,
+  trimmed,
+  useIntakeStatus,
+  type Contact,
+} from "@/components/auth/contact-fields";
 import { LoginForm } from "@/components/auth/login-form";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,10 +45,20 @@ export function DeeperTrace({
   >("SELF");
   const [isSignedIn, setIsSignedIn] = useState(signedIn);
   const [consent, setConsent] = useState(false);
+  // While sign-in codes cannot be texted, a visitor leaves name, mobile and
+  // email instead; the request is marked for a verification call.
+  const intake = useIntakeStatus();
+  const guest = !isSignedIn && intake?.guestTrace === true;
+  const [contact, setContact] = useState<Contact>(EMPTY_CONTACT);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [done, setDone] = useState<{ id: string; reference: string; status: string } | null>(null);
+  const [done, setDone] = useState<{
+    id: string;
+    reference: string;
+    status: string;
+    guest?: boolean;
+  } | null>(null);
 
   const requestId = useRef<string | null>(null);
 
@@ -52,26 +70,38 @@ export function DeeperTrace({
       return;
     }
 
+    if (guest) {
+      const problem = contactProblem(contact);
+      if (problem) {
+        setError(problem);
+        return;
+      }
+    }
+
     setBusy(true);
     setError("");
     requestId.current ??= crypto.randomUUID();
 
     try {
-      const res = await callApi<{ id: string; reference: string; status: string }>("traces", {
-        body: {
-          requestId: requestId.current,
-          holderName: investorName || holderName,
-          scope: scope || "ALL_INDIA",
-          relationship,
-          oldCity: oldCity || undefined,
-          oldAddress: oldAddress || undefined,
-          certificateStatus,
-          companies: companies || undefined,
-          years: years || undefined,
-          consent: true,
+      const res = await callApi<{ id: string; reference: string; status: string }>(
+        guest ? "traces/guest" : "traces",
+        {
+          body: {
+            ...(guest ? { contact: trimmed(contact) } : {}),
+            requestId: requestId.current,
+            holderName: investorName || holderName,
+            scope: scope || "ALL_INDIA",
+            relationship,
+            oldCity: oldCity || undefined,
+            oldAddress: oldAddress || undefined,
+            certificateStatus,
+            companies: companies || undefined,
+            years: years || undefined,
+            consent: true,
+          },
         },
-      });
-      setDone(res);
+      );
+      setDone({ ...res, guest });
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -145,22 +175,33 @@ export function DeeperTrace({
             )}
           </div>
 
-          <p className="text-sm text-fg-2 mb-5 leading-relaxed">
-            A Finsol Enterprises analyst will check the company and registrar records we are
-            authorised to search, and record each source checked against this reference. We will
-            contact you on your verified mobile number or email with what we find.
-          </p>
+          {done.guest ? (
+            <p className="text-sm text-fg-2 mb-5 leading-relaxed" data-testid="trace-guest-note">
+              Keep this reference. A Finsol Enterprises analyst will first call{" "}
+              <span className="tnum font-medium text-fg">{contact.phone.trim()}</span> to verify
+              your number (status: pending call verification), then check the company and registrar
+              records we are authorised to search and record each source against this reference.
+            </p>
+          ) : (
+            <p className="text-sm text-fg-2 mb-5 leading-relaxed">
+              A Finsol Enterprises analyst will check the company and registrar records we are
+              authorised to search, and record each source checked against this reference. We will
+              contact you on your verified mobile number or email with what we find.
+            </p>
+          )}
 
-          <div className="flex flex-wrap items-center gap-3">
-            <Button asChild variant="default" size="sm">
-              <Link href="/traces">View My Trace Requests</Link>
-            </Button>
-            {done.status !== "WITHDRAWN" && (
-              <Button variant="outline" size="sm" disabled={busy} onClick={withdraw}>
-                Withdraw request
+          {!done.guest && (
+            <div className="flex flex-wrap items-center gap-3">
+              <Button asChild variant="default" size="sm">
+                <Link href="/traces">View My Trace Requests</Link>
               </Button>
-            )}
-          </div>
+              {done.status !== "WITHDRAWN" && (
+                <Button variant="outline" size="sm" disabled={busy} onClick={withdraw}>
+                  Withdraw request
+                </Button>
+              )}
+            </div>
+          )}
         </div>
       ) : (
         <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
@@ -286,7 +327,16 @@ export function DeeperTrace({
           ) : (
             <div className="space-y-4">
               {/* Claimant contact: the Login Gateway (name, mobile verified by OTP, email). Kept outside the trace form. */}
-              {!isSignedIn && (
+              {guest && (
+                <div className="rounded-lg border border-border bg-muted/30 p-4">
+                  <p className="mb-3 text-sm text-fg-2">
+                    Your contact details. We can&apos;t text sign-in codes right now, so a Finsol
+                    analyst will call this number to verify it before any search starts.
+                  </p>
+                  <ContactFields value={contact} onChange={setContact} idPrefix="trace-c" />
+                </div>
+              )}
+              {!isSignedIn && !guest && (
                 <div className="rounded-lg border border-border bg-muted/30 p-4">
                   <p className="mb-3 text-sm text-fg-2">
                     Sign in with your name, mobile number and email. We send a 6-digit code to
@@ -351,7 +401,7 @@ export function DeeperTrace({
 
                   <Button
                     type="submit"
-                    disabled={busy || !consent || !isSignedIn}
+                    disabled={busy || !consent || (!isSignedIn && !guest)}
                     className="gap-2"
                   >
                     {busy ? "Submitting Trace Request…" : "Submit Archival Trace Request"}

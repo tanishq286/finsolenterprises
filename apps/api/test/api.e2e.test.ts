@@ -1860,3 +1860,145 @@ async function pdfText(buf: Buffer): Promise<string> {
   }
   return parts.join(" ").replace(/\s+/g, " ");
 }
+
+describe("intake without a sign-in code", () => {
+  const holdings = [
+    { symbol: "ITC", exchange: "NSE", purchaseYear: 2000, originalShares: 10, manualPrice: 400 },
+  ];
+  const contact = {
+    name: "Guest Visitor",
+    phone: "98765 01234",
+    email: "Guest.Visitor@example.in",
+  };
+  const db = () => new pg.Client({ connectionString: process.env.DATABASE_URL });
+  const setSms = (available: boolean) =>
+    Object.defineProperty(otp, "available", { value: available, configurable: true });
+  const pdf = (r: request.Test) =>
+    r.buffer(true).parse((res, cb) => {
+      const chunks: Buffer[] = [];
+      res.on("data", (c: Buffer) => chunks.push(c));
+      res.on("end", () => cb(null, Buffer.concat(chunks)));
+    });
+
+  it("issues a Valuation Dossier to a visitor who leaves contact details, marked unverified", async () => {
+    await request(http)
+      .post("/api/v1/valuation/report/guest")
+      .send({ holdings, contact })
+      .expect(400); // consent is required
+    await request(http)
+      .post("/api/v1/valuation/report/guest")
+      .send({ holdings, contact: { ...contact, phone: "12345" }, consent: true })
+      .expect(400);
+    const res = await pdf(
+      request(http)
+        .post("/api/v1/valuation/report/guest")
+        .send({ holdings, contact, consent: true }),
+    ).expect(200);
+    expect(res.headers["content-type"]).toContain("application/pdf");
+    const text = await pdfText(res.body as Buffer);
+    expect(text).toContain("Prepared for Guest Visitor");
+    expect(text).toContain("Contact details as given; a Finsol analyst confirms them by phone");
+    expect(text).toContain(
+      "Success-Based Fee: Custom (Zero Upfront — Quoted per Engagement Letter)",
+    );
+
+    const c = db();
+    await c.connect();
+    const report = await c.query(
+      `SELECT r.user_id, r.contact_verification, l.phone, l.email, l.phone_otp_verified, l.intake_source, l.search_context
+         FROM valuation_reports r JOIN leads_and_inquiries l ON l.id = r.lead_id
+        WHERE r.report_code = $1`,
+      [res.headers["x-report-code"]],
+    );
+    await c.end();
+    expect(report.rows[0]).toMatchObject({
+      user_id: null,
+      contact_verification: "PENDING_CALL_VERIFICATION",
+      phone: "+919876501234",
+      email: "guest.visitor@example.in",
+      phone_otp_verified: false,
+      intake_source: "VALUATION_DOSSIER",
+    });
+    expect(report.rows[0].search_context.contactVerification).toBe("PENDING_CALL_VERIFICATION");
+  });
+
+  it("accepts a Deeper Trace without a code only while codes cannot be texted", async () => {
+    const trace = {
+      requestId: randomUUID(),
+      holderName: "Late Shri Guest Holder",
+      scope: "ALL_INDIA",
+      relationship: "LEGAL_HEIR",
+      certificateStatus: "LOST",
+      consent: true,
+      contact,
+    };
+    await request(http).post("/api/v1/traces/guest").send(trace).expect(409);
+    const status = await request(http).get("/api/v1/intake/status").expect(200);
+    expect(status.body).toMatchObject({ smsSignIn: true, guestDossier: true, guestTrace: false });
+
+    setSms(false);
+    try {
+      expect((await request(http).get("/api/v1/intake/status")).body.guestTrace).toBe(true);
+      await request(http)
+        .post("/api/v1/traces/guest")
+        .send({ ...trace, consent: false })
+        .expect(400);
+      const res = await request(http).post("/api/v1/traces/guest").send(trace).expect(201);
+      expect(res.body.reference).toMatch(/^FIN-TRC-[A-Z2-9]{6}$/);
+      expect(res.body).toMatchObject({
+        status: "PENDING_AUDIT",
+        contactVerification: "PENDING_CALL_VERIFICATION",
+      });
+      // A retried submission returns the same request.
+      const again = await request(http).post("/api/v1/traces/guest").send(trace).expect(201);
+      expect(again.body.reference).toBe(res.body.reference);
+
+      const c = db();
+      await c.connect();
+      const row = await c.query(
+        `SELECT t.user_id, t.contact_verification, t.holder_name, l.relationship_to_holder, l.physical_cert_status, l.intake_source
+           FROM trace_requests t JOIN leads_and_inquiries l ON l.id = t.lead_id WHERE t.reference = $1`,
+        [res.body.reference],
+      );
+      await c.end();
+      expect(row.rows[0]).toMatchObject({
+        user_id: null,
+        contact_verification: "PENDING_CALL_VERIFICATION",
+        relationship_to_holder: "LEGAL_HEIR",
+        physical_cert_status: "LOST",
+        intake_source: "DEEPER_TRACE",
+      });
+      expect(row.rows[0].holder_name).not.toContain("Guest Holder"); // encrypted at rest
+
+      // Staff see it, flagged for a verification call.
+      const list = await request(http).get("/api/v1/admin/traces").set(auth("analyst")).expect(200);
+      const item = list.body.items.find(
+        (t: { reference: string }) => t.reference === res.body.reference,
+      );
+      expect(item.contactVerification).toBe("PENDING_CALL_VERIFICATION");
+    } finally {
+      setSms(true);
+    }
+  });
+
+  it("takes a verification-call request and never signs anyone in", async () => {
+    const res = await request(http)
+      .post("/api/v1/intake/callback")
+      .send({ contact: { ...contact, phone: "9876501235" }, consent: true })
+      .expect(200);
+    expect(res.body).toEqual({
+      status: "RECEIVED",
+      contactVerification: "PENDING_CALL_VERIFICATION",
+    });
+    expect(res.body.token).toBeUndefined();
+  });
+});
+
+describe("stats: defensible recoverable value", () => {
+  it("splits share value from listed amounts and leads with verified records", async () => {
+    const s = (await request(http).get("/api/v1/stats").expect(200)).body;
+    expect(s.verifiedRecords).toBe(s.folios);
+    expect(s.recoverableValuePaise).toBe(s.shareValuePaise + s.unclaimedAmountsPaise);
+    expect(s.estimatedValuePaise).toBe(s.recoverableValuePaise);
+  });
+});

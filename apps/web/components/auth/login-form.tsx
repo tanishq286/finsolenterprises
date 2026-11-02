@@ -10,6 +10,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { homeFor } from "@/components/auth/account-link";
+import { SignInFallback } from "@/components/auth/contact-fields";
 import { callApi } from "@/lib/api/client";
 
 /**
@@ -98,9 +99,7 @@ export function LoginForm({
         </Alert>
       )}
       {paused ? (
-        <Alert variant="pending" role="status" data-testid="otp-paused">
-          <AlertDescription>{paused}</AlertDescription>
-        </Alert>
+        <SignInFallback message="Sign-in codes by SMS are switched off while our SMS sender registration completes. Everything else works, and our team can verify your number by phone." />
       ) : !sent ? (
         <form onSubmit={send} className="grid gap-4" aria-busy={paused === undefined}>
           <div>

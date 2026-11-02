@@ -20,6 +20,8 @@ import {
   SERVICE_VERTICALS,
   splitName,
   canonicalNameParts,
+  countsShareValue,
+  isDividendListing,
   numberToIndianWords,
   POPULAR_EXAMPLES,
   rupeesInWords,
@@ -329,5 +331,40 @@ describe("canonicalNameParts", () => {
       middle: "",
       last: "",
     });
+  });
+});
+
+describe("countsShareValue", () => {
+  it("counts shares with the IEPF, due for transfer, or in suspense", () => {
+    for (const custodyStatus of ["IEPF_AUTHORITY", "DUE_FOR_IEPF_TRANSFER", "COMPANY_SUSPENSE"])
+      expect(countsShareValue({ custodyStatus, investmentType: null, shares: 100 })).toBe(true);
+    expect(
+      countsShareValue({
+        custodyStatus: "COMPANY_SUSPENSE",
+        investmentType: "Shares Number of underlying Shares",
+        shares: 50,
+      }),
+    ).toBe(true);
+  });
+
+  it("never counts the shares behind an unclaimed dividend", () => {
+    for (const investmentType of [
+      "Amount for unpaid and unclaimed dividend",
+      "AMOUNT REFUNDED FROM THE UNPAID DIVIDEND ACCOUNT",
+      "unpaid dividend",
+    ])
+      expect(
+        countsShareValue({ custodyStatus: "COMPANY_SUSPENSE", investmentType, shares: 93_651 }),
+      ).toBe(false);
+    expect(isDividendListing("AMOUNT FOR UNPAID AND UNCLAIMED DIVIDEND")).toBe(true);
+  });
+
+  it("does not count dormant physical holdings or rows without shares", () => {
+    expect(
+      countsShareValue({ custodyStatus: "PHYSICAL_DORMANT", investmentType: null, shares: 400 }),
+    ).toBe(false);
+    expect(
+      countsShareValue({ custodyStatus: "IEPF_AUTHORITY", investmentType: null, shares: 0 }),
+    ).toBe(false);
   });
 });

@@ -1,11 +1,17 @@
 import { randomInt } from "node:crypto";
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { decryptField, encryptField } from "@finsol/db";
 import { PrismaService } from "../../common/prisma.service.js";
 import { AuditService } from "../../common/audit.service.js";
 import type { SessionClaims } from "../../common/auth/tokens.service.js";
 import { SearchService } from "../search/search.service.js";
-import type { CheckInput, TraceInput } from "./traces.controller.js";
+import type { CheckInput, GuestTraceInput, TraceInput } from "./traces.controller.js";
+import { IntakeService, PENDING_CALL_VERIFICATION } from "../intake/intake.service.js";
 
 const REF_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
@@ -22,6 +28,7 @@ export class TracesService {
     private readonly prisma: PrismaService,
     private readonly search: SearchService,
     private readonly audit: AuditService,
+    private readonly intake: IntakeService,
   ) {}
   async create(body: TraceInput, user: SessionClaims) {
     // A retried submission (same requestId from the same account) returns the first request.
@@ -35,23 +42,79 @@ export class TracesService {
       where: { id: user.sub },
       select: { phone: true, email: true, name: true },
     });
+    return this.insert(body, {
+      userId: user.sub,
+      leadId: null,
+      contactVerification: "LOGIN_OTP",
+      contact: {
+        phone: account.phone,
+        phoneVerifiedBy: "LOGIN_OTP",
+        email: account.email,
+        name: account.name,
+      },
+    });
+  }
+
+  /**
+   * A Deeper Trace without a sign-in code. Only while codes cannot be texted;
+   * the contact becomes a lead and the request says PENDING_CALL_VERIFICATION
+   * until an analyst confirms the number by phone.
+   */
+  async createGuest(body: GuestTraceInput, ip: string | null) {
+    if (this.intake.smsAvailable())
+      throw new ConflictException("Sign in with the code we text you to request a Deeper Trace.");
+    const { contact, ...trace } = body;
+    const prior = await this.prisma.client.traceRequest.findFirst({
+      where: { userId: null, indexSnapshot: { path: ["requestId"], equals: body.requestId } },
+      select: { ...summary, contactVerification: true },
+    });
+    if (prior) return prior;
+    const lead = await this.intake.lead(contact, "DEEPER_TRACE", ip, {
+      relationship:
+        trace.relationship === "SELF" || trace.relationship === "LEGAL_HEIR"
+          ? trace.relationship
+          : null,
+      certificates:
+        trace.certificateStatus && trace.certificateStatus !== "UNKNOWN"
+          ? trace.certificateStatus
+          : null,
+    });
+    return this.insert(trace, {
+      userId: null,
+      leadId: lead.id,
+      contactVerification: PENDING_CALL_VERIFICATION,
+      contact: {
+        phone: lead.phone,
+        phoneVerifiedBy: PENDING_CALL_VERIFICATION,
+        email: lead.email,
+        name: lead.name,
+      },
+    });
+  }
+
+  private async insert(
+    body: TraceInput,
+    owner: {
+      userId: string | null;
+      leadId: string | null;
+      contactVerification: "LOGIN_OTP" | typeof PENDING_CALL_VERIFICATION;
+      contact: { phone: string; phoneVerifiedBy: string; email: string | null; name: string };
+    },
+  ) {
     const { requestId, consent: _consent, ...details } = body;
-    const contactInfo = {
-      phone: account.phone,
-      phoneVerifiedBy: "LOGIN_OTP",
-      email: account.email,
-      name: account.name,
-    };
+    const contactInfo = owner.contact;
     const coverage = await this.search.coverage();
     for (let attempt = 0; ; attempt++) {
       // FIN-TRC- plus 6 characters from an unambiguous alphabet: about 1.07 billion values.
       const reference = `FIN-TRC-${Array.from({ length: 6 }, () => REF_ALPHABET[randomInt(REF_ALPHABET.length)]).join("")}`;
       try {
         return await this.prisma.client.traceRequest.create({
-          select: summary,
+          select: { ...summary, contactVerification: true },
           data: {
             reference,
-            userId: user.sub,
+            userId: owner.userId,
+            leadId: owner.leadId,
+            contactVerification: owner.contactVerification,
             holderName: encryptField(body.holderName, this.prisma.fieldKeys),
             scope: body.scope,
             status: "PENDING_AUDIT",
@@ -101,7 +164,7 @@ export class TracesService {
   async list(page: number) {
     const [items, total] = await Promise.all([
       this.prisma.client.traceRequest.findMany({
-        select: { ...summary, scope: true },
+        select: { ...summary, scope: true, contactVerification: true },
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         skip: (page - 1) * 50,
         take: 50,

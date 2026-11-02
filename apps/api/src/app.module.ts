@@ -1,3 +1,5 @@
+import { IntakeController } from "./modules/intake/intake.controller.js";
+import { IntakeService } from "./modules/intake/intake.service.js";
 import { AdminTracesController, TracesController } from "./modules/traces/traces.controller.js";
 import { TracesService } from "./modules/traces/traces.service.js";
 import { Module } from "@nestjs/common";
@@ -74,6 +76,7 @@ import { ValuationController } from "./modules/valuation/valuation.controller.js
     MarketController,
     ValuationController,
     CronController,
+    IntakeController,
   ],
   providers: [
     { provide: ENV, useFactory: () => loadEnv() },
@@ -109,6 +112,7 @@ import { ValuationController } from "./modules/valuation/valuation.controller.js
     JobQueueService,
     JobHandlersService,
     OtpService,
+    IntakeService,
     SearchService,
     LiveMcaSyncService,
     CasesService,

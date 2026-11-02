@@ -268,7 +268,9 @@ export function SearchResults({
                     <div className="flex flex-wrap items-center justify-between gap-3 border-t border-(--glass-border) pt-4">
                       <p className="text-sm text-fg-3">
                         {r.recordKind === "UNCLAIMED_AMOUNT"
-                          ? "This statement lists an unclaimed dividend amount and no share count. "
+                          ? r.sharesStated
+                            ? "This statement lists an unclaimed dividend on shares the holder still owns; only the dividend is counted. "
+                            : "This statement lists an unclaimed dividend amount and no share count. "
                           : ""}
                         {r.transferFinancialYear
                           ? `Recorded for FY ${r.transferFinancialYear}. `

@@ -1,5 +1,6 @@
 import { Controller, Get } from "@nestjs/common";
-import { holdingValuePaise } from "@finsol/shared";
+import { Prisma } from "@finsol/db";
+import { holdingValuePaise, RECOVERABLE_SHARES_SQL } from "@finsol/shared";
 
 import { Public } from "../../common/auth/decorators.js";
 import { PrismaService } from "../../common/prisma.service.js";
@@ -18,6 +19,19 @@ interface Stats {
   companyProfiles: number;
   listedEquities: number;
   states: number;
+  /** Published holder records: the headline figure. */
+  verifiedRecords: number;
+  /**
+   * Defensible recoverable value: shareValuePaise + unclaimedAmountsPaise.
+   * estimatedValuePaise carries the same figure for older clients.
+   */
+  recoverableValuePaise: number;
+  /** Market value of shares with the IEPF, due for transfer, or in suspense, once per folio. */
+  shareValuePaise: number;
+  /** Unclaimed dividends and other listed amounts, each listed amount once per folio and event. */
+  unclaimedAmountsPaise: number;
+  /** Folios whose shares count towards shareValuePaise. */
+  shareFolios: number;
   estimatedValuePaise: number;
   activeCases: number;
   creditedCases: number;
@@ -52,11 +66,28 @@ export class StatsController {
       db.unclaimedFolio.count({ where: published }),
       db.company.count(),
       db.unclaimedFolio.groupBy({ by: ["state"], where: published }).then((g) => g.length),
-      db.unclaimedFolio.groupBy({
-        by: ["companyId"],
-        where: published,
-        _sum: { postActionShares: true, unclaimedDividendAmount: true },
-      }),
+      // Shares count only for share records with the IEPF, due for transfer or in
+      // suspense, never the shares behind an unclaimed dividend; a folio listed
+      // in several years' statements counts once, at its largest stated holding.
+      // Amounts count once per folio, event and amount.
+      db.$queryRaw<{ company_id: string; shares: bigint; share_folios: bigint; amount: string }[]>`
+          WITH shares AS (
+            SELECT f.company_id, f.folio_number_hash, max(f.post_action_shares) AS shares
+              FROM unclaimed_folios f
+             WHERE f.review_status = 'PUBLISHED' AND ${Prisma.raw(RECOVERABLE_SHARES_SQL)}
+             GROUP BY 1, 2),
+          amounts AS (
+            SELECT DISTINCT f.company_id, f.folio_number_hash, f.event_date,
+                   f.transfer_financial_year, f.unclaimed_dividend_amount AS amount
+              FROM unclaimed_folios f
+             WHERE f.review_status = 'PUBLISHED' AND f.unclaimed_dividend_amount > 0),
+          companies AS (
+            SELECT DISTINCT company_id FROM unclaimed_folios WHERE review_status = 'PUBLISHED')
+          SELECT c.company_id,
+                 coalesce((SELECT sum(s.shares) FROM shares s WHERE s.company_id = c.company_id), 0)::bigint AS shares,
+                 (SELECT count(*) FROM shares s WHERE s.company_id = c.company_id) AS share_folios,
+                 coalesce((SELECT sum(a.amount) FROM amounts a WHERE a.company_id = c.company_id), 0)::text AS amount
+            FROM companies c`,
       db.recoveryCase.count({ where: { recoverStep: { lt: 7 } } }),
       db.recoveryCase.count({ where: { dematCreditStatus: "DONE" } }),
       db.associate.count({ where: { isVerified: true } }),
@@ -72,13 +103,15 @@ export class StatsController {
       ]),
     );
     // Shares are valued only where a price exists; amounts are as the statements list them.
-    const estimatedValuePaise = perCompany.reduce(
-      (s, g) =>
-        s +
-        holdingValuePaise(g._sum.postActionShares ?? 0, prices.get(g.companyId) ?? 0) +
-        Math.round(num(g._sum.unclaimedDividendAmount) * 100),
-      0,
-    );
+    let shareValuePaise = 0;
+    let unclaimedAmountsPaise = 0;
+    let shareFolios = 0;
+    for (const g of perCompany) {
+      shareValuePaise += holdingValuePaise(Number(g.shares), prices.get(g.company_id) ?? 0);
+      unclaimedAmountsPaise += Math.round(Number(g.amount) * 100);
+      shareFolios += Number(g.share_folios);
+    }
+    const recoverableValuePaise = shareValuePaise + unclaimedAmountsPaise;
     const value: Stats = {
       folios,
       holderRecords: folios,
@@ -88,7 +121,12 @@ export class StatsController {
       companyProfiles: companies,
       listedEquities,
       states,
-      estimatedValuePaise,
+      verifiedRecords: folios,
+      recoverableValuePaise,
+      shareValuePaise,
+      unclaimedAmountsPaise,
+      shareFolios,
+      estimatedValuePaise: recoverableValuePaise,
       activeCases,
       creditedCases,
       verifiedAssociates,

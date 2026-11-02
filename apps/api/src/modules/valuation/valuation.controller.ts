@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 
+import type { Role } from "@finsol/shared";
 import {
   Body,
   Controller,
@@ -8,8 +9,10 @@ import {
   HttpStatus,
   Inject,
   Post,
+  Req,
   Res,
 } from "@nestjs/common";
+import { Throttle } from "@nestjs/throttler";
 import {
   claimEstimate,
   describeQuote,
@@ -24,11 +27,16 @@ import { z } from "zod";
 
 import { ENV, type Env } from "../../config/env.js";
 import { AuditService } from "../../common/audit.service.js";
-import { CurrentUser } from "../../common/auth/decorators.js";
+import { clientIp, CurrentUser, Public, type AuthedRequest } from "../../common/auth/decorators.js";
 import type { SessionClaims } from "../../common/auth/tokens.service.js";
 import { PrismaService } from "../../common/prisma.service.js";
 import { EquitiesService } from "../../market/equities.service.js";
-import { buildValuationPdf } from "./valuation-pdf.js";
+import {
+  contactSchema,
+  IntakeService,
+  PENDING_CALL_VERIFICATION,
+} from "../intake/intake.service.js";
+import { buildValuationPdf, type ValuationReportInput } from "./valuation-pdf.js";
 
 const reportSchema = z.object({
   holdings: z
@@ -46,9 +54,14 @@ const reportSchema = z.object({
     .max(20),
 });
 
+const guestReportSchema = reportSchema.extend({
+  contact: contactSchema,
+  consent: z.literal(true, { error: "We need your consent to call you about this report." }),
+});
+
 /**
  * POST /api/v1/valuation/report: the calculator's Valuation Dossier (PDF).
- * Signed-in only (the Login Gateway verified the mobile by OTP), at most
+ * Signed in, or as a guest who leaves a name, mobile and email; at most
  * VALUATION_REPORTS_PER_DAY per mobile number. Every figure is recomputed
  * here from the same price and event history the calculator shows.
  */
@@ -58,9 +71,11 @@ export class ValuationController {
     private readonly prisma: PrismaService,
     private readonly equities: EquitiesService,
     private readonly audit: AuditService,
+    private readonly intake: IntakeService,
     @Inject(ENV) private readonly env: Env,
   ) {}
 
+  /** Signed-in: the Login Gateway verified the mobile by OTP. */
   @Post("report")
   @HttpCode(200)
   async report(
@@ -68,17 +83,82 @@ export class ValuationController {
     @CurrentUser() claims: SessionClaims,
     @Res() res: Response,
   ) {
-    const db = this.prisma.client;
-    const user = await db.user.findUniqueOrThrow({ where: { id: claims.sub } });
-    const today = await db.valuationReport.count({
-      where: { phone: user.phone, createdAt: { gte: new Date(Date.now() - 86_400_000) } },
+    const user = await this.prisma.client.user.findUniqueOrThrow({ where: { id: claims.sub } });
+    await this.issue(body, res, {
+      userId: user.id,
+      leadId: null,
+      phone: user.phone,
+      preparedFor: { name: user.name, phoneMasked: maskPhone(user.phone), email: user.email },
+      contactVerification: "LOGIN_OTP",
+      actor: { id: user.id, role: user.role },
+      ip: null,
+    });
+  }
+
+  /**
+   * No sign-in code needed: the visitor gives a name, mobile and email, which
+   * become a lead marked PENDING_CALL_VERIFICATION. The report holds only the
+   * figures the visitor asked for, so nothing private is exposed by an
+   * unverified number. Same per-mobile daily limit as signed-in reports.
+   */
+  @Public()
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @Post("report/guest")
+  @HttpCode(200)
+  async guestReport(
+    @Body({ schema: guestReportSchema }) body: z.infer<typeof guestReportSchema>,
+    @Req() req: AuthedRequest,
+    @Res() res: Response,
+  ) {
+    const phone = this.intake.phone(body.contact.phone);
+    await this.assertUnderDailyLimit(phone);
+    const lead = await this.intake.lead(body.contact, "VALUATION_DOSSIER", clientIp(req), {
+      context: { holdings: body.holdings.length },
+    });
+    await this.issue(body, res, {
+      userId: null,
+      leadId: lead.id,
+      phone: lead.phone,
+      preparedFor: {
+        name: lead.name,
+        phoneMasked: maskPhone(lead.phone),
+        email: lead.email,
+        unverified: true,
+      },
+      contactVerification: PENDING_CALL_VERIFICATION,
+      actor: null,
+      ip: clientIp(req),
+    });
+  }
+
+  private async assertUnderDailyLimit(phone: string): Promise<number> {
+    const today = await this.prisma.client.valuationReport.count({
+      where: { phone, createdAt: { gte: new Date(Date.now() - 86_400_000) } },
     });
     if (today >= this.env.VALUATION_REPORTS_PER_DAY)
       throw new HttpException(
         `Each mobile number can download ${this.env.VALUATION_REPORTS_PER_DAY} reports a day. Try again tomorrow, or ask your analyst.`,
         HttpStatus.TOO_MANY_REQUESTS,
       );
+    return today;
+  }
 
+  /** Recomputes every figure, records the report and sends the PDF. */
+  private async issue(
+    body: z.infer<typeof reportSchema>,
+    res: Response,
+    owner: {
+      userId: string | null;
+      leadId: string | null;
+      phone: string;
+      preparedFor: ValuationReportInput["preparedFor"];
+      contactVerification: "LOGIN_OTP" | typeof PENDING_CALL_VERIFICATION;
+      actor: { id: string; role: Role } | null;
+      ip: string | null;
+    },
+  ) {
+    const db = this.prisma.client;
+    const today = await this.assertUnderDailyLimit(owner.phone);
     const rows: HoldingValuation[] = [];
     const notes: string[] = [];
     const quoteTimes: Date[] = [];
@@ -121,15 +201,18 @@ export class ValuationController {
       data: {
         id: randomUUID(),
         reportCode,
-        userId: user.id,
-        phone: user.phone,
+        userId: owner.userId,
+        leadId: owner.leadId,
+        contactVerification: owner.contactVerification,
+        phone: owner.phone,
         holdings: rows as never,
         totalValuePaise: BigInt(totals.totalPaise),
       },
     });
     await this.audit.record({
-      actorId: user.id,
-      actorRole: user.role,
+      actorId: owner.actor?.id ?? null,
+      actorRole: owner.actor?.role ?? null,
+      ip: owner.ip,
       action: "valuation.report",
       entityType: "valuation_report",
       entityId: reportCode,
@@ -138,7 +221,7 @@ export class ValuationController {
     const pdf = await buildValuationPdf({
       reportCode,
       issuedAt,
-      preparedFor: { name: user.name, phoneMasked: maskPhone(user.phone), email: user.email },
+      preparedFor: owner.preparedFor,
       rows,
       totals,
       estimate: claimEstimate(totals),

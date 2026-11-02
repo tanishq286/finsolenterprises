@@ -1,8 +1,15 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query, Req } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
 import { ALL_INDIA, INDIAN_STATES } from "@finsol/shared";
 import { z } from "zod";
-import { CurrentUser, Roles } from "../../common/auth/decorators.js";
+import {
+  clientIp,
+  CurrentUser,
+  Public,
+  Roles,
+  type AuthedRequest,
+} from "../../common/auth/decorators.js";
+import { contactSchema } from "../intake/intake.service.js";
 import type { SessionClaims } from "../../common/auth/tokens.service.js";
 import { TracesService } from "./traces.service.js";
 
@@ -21,6 +28,9 @@ export const traceSchema = z
   })
   .strict();
 export type TraceInput = z.infer<typeof traceSchema>;
+/** A Deeper Trace from a visitor who could not get a sign-in code. */
+export const guestTraceSchema = traceSchema.extend({ contact: contactSchema }).strict();
+export type GuestTraceInput = z.infer<typeof guestTraceSchema>;
 export const checkSchema = z
   .object({
     source: z.url().max(1000),
@@ -52,6 +62,20 @@ export class TracesController {
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   create(@Body({ schema: traceSchema }) body: TraceInput, @CurrentUser() user: SessionClaims) {
     return this.traces.create(body, user);
+  }
+  /**
+   * Without a sign-in code, only while codes cannot be texted: the mobile and
+   * email are kept as given and marked PENDING_CALL_VERIFICATION.
+   */
+  @Public()
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @Post("guest")
+  @HttpCode(201)
+  createGuest(
+    @Body({ schema: guestTraceSchema }) body: GuestTraceInput,
+    @Req() req: AuthedRequest,
+  ) {
+    return this.traces.createGuest(body, clientIp(req));
   }
   @Get()
   mine(@CurrentUser() user: SessionClaims) {
