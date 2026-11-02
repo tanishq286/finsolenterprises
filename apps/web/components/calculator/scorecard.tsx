@@ -202,10 +202,10 @@ export function NetValueScorecard({
             {formatPaise(e.totalClaimablePaise)}
           </Line>
           <Line
-            label="Success-Based Fee"
-            hint="Zero upfront. Charged only on value actually credited to you."
+            label="Success-Based Fee: Custom (Zero Upfront — Quoted per Engagement Letter)"
+            hint="Charged only on value actually credited to you."
           >
-            Custom (Zero Upfront — Quoted per Engagement Letter)
+            ₹0 upfront
           </Line>
           <Line
             label="Statutory & documentation costs"
