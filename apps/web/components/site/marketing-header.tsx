@@ -3,7 +3,6 @@ import Link from "next/link";
 import { Wordmark } from "@/components/brand/wordmark";
 import { Button } from "@/components/ui/button";
 import { CHECK_CTA } from "@/components/site/cta";
-import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { NavLinks } from "@/components/site/nav-links";
 import { AccountLink } from "@/components/auth/account-link";
 
@@ -29,7 +28,6 @@ export function MarketingHeader() {
           <NavLinks items={NAV} label="Main" />
         </div>
         <div className="order-2 flex items-center gap-3 lg:order-3">
-          <ThemeToggle />
           <AccountLink />
           <Button
             asChild

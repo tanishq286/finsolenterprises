@@ -1,6 +1,13 @@
 @import "tailwindcss";
 
 /*
+ * Light only. Tailwind's default dark: variant follows the operating system
+ * (prefers-color-scheme), which would recolour parts of a light page for
+ * visitors with a dark OS. Tie it to a data-theme="dark" that is never set.
+ */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/*
  * Mona Sans (variable, weight and width axes), served from /public/fonts at a
  * stable URL so app/layout.tsx can preload the latin file and it lands before
  * first paint: no late swap, no layout shift. Files copied unchanged from

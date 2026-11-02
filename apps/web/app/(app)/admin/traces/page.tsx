@@ -14,28 +14,28 @@ function statusBadge(status: string) {
   const norm = status.toUpperCase();
   if (norm === "PENDING_AUDIT" || norm === "OPEN") {
     return (
-      <span className="inline-flex items-center rounded-full bg-amber-500/15 px-2.5 py-0.5 text-xs font-semibold text-amber-700 dark:text-amber-400 border border-amber-500/30">
+      <span className="inline-flex items-center rounded-full bg-amber-500/15 px-2.5 py-0.5 text-xs font-semibold text-amber-700 border border-amber-500/30">
         Pending Audit
       </span>
     );
   }
   if (norm === "RTA_ARCHIVE_SEARCHED" || norm === "IN_PROGRESS") {
     return (
-      <span className="inline-flex items-center rounded-full bg-blue-500/15 px-2.5 py-0.5 text-xs font-semibold text-blue-700 dark:text-blue-400 border border-blue-500/30">
+      <span className="inline-flex items-center rounded-full bg-blue-500/15 px-2.5 py-0.5 text-xs font-semibold text-blue-700 border border-blue-500/30">
         RTA Archive Searched
       </span>
     );
   }
   if (norm === "MATCH_FOUND" || norm === "CLOSED_FOUND") {
     return (
-      <span className="inline-flex items-center rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400 border border-emerald-500/30">
+      <span className="inline-flex items-center rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 border border-emerald-500/30">
         Match Found
       </span>
     );
   }
   if (norm === "CLOSED" || norm === "CLOSED_NOT_FOUND" || norm === "WITHDRAWN") {
     return (
-      <span className="inline-flex items-center rounded-full bg-zinc-500/15 px-2.5 py-0.5 text-xs font-semibold text-zinc-700 dark:text-zinc-400 border border-zinc-500/30">
+      <span className="inline-flex items-center rounded-full bg-zinc-500/15 px-2.5 py-0.5 text-xs font-semibold text-zinc-700 border border-zinc-500/30">
         {norm === "WITHDRAWN" ? "Withdrawn" : "Closed"}
       </span>
     );

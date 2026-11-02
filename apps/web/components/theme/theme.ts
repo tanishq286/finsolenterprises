@@ -1,54 +1,17 @@
-"use client";
-
-import { useSyncExternalStore } from "react";
-
-export type Theme = "dark" | "light";
-
-const KEY = "finsol:theme";
-const EVENT = "finsol:theme-change";
-const CHROME: Record<Theme, string> = { dark: "#05080E", light: "#F3F6FA" };
-
-export function readTheme(): Theme {
-  return document.documentElement.dataset.theme === "light" ? "light" : "dark";
-}
-
-function syncChrome(theme: Theme) {
-  document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]').forEach((m) => {
-    m.content = CHROME[theme];
-  });
-}
-
 /**
- * Switch themes. Where the View Transitions API exists and motion is allowed,
- * the old and new themes crossfade; otherwise the swap is instant.
+ * Finsol Enterprises is light only, day and night, whatever the operating
+ * system prefers: app/layout.tsx renders data-theme="light" and nothing
+ * switches it. Kept as a module so theme-aware code (the WebGL route field)
+ * has one place to ask.
  */
-export function setTheme(theme: Theme) {
-  const apply = () => {
-    document.documentElement.dataset.theme = theme;
-    syncChrome(theme);
-    window.dispatchEvent(new Event(EVENT));
-  };
-  try {
-    localStorage.setItem(KEY, theme);
-  } catch {
-    /* the choice just won't persist */
-  }
-  const doc = document as Document & { startViewTransition?: (cb: () => void) => unknown };
-  if (doc.startViewTransition && matchMedia("(prefers-reduced-motion: no-preference)").matches) {
-    doc.startViewTransition(apply);
-  } else {
-    apply();
-  }
-}
+export type Theme = "light";
 
-function subscribe(cb: () => void) {
-  window.addEventListener(EVENT, cb);
-  return () => window.removeEventListener(EVENT, cb);
-}
+export const THEME: Theme = "light";
 
-/** The current theme; "dark" during server render and hydration. */
+/** The page background colour, for browser chrome and canvases. */
+export const THEME_CHROME: Record<Theme, string> = { light: "#F3F6FA" };
+
+/** Always "light". */
 export function useTheme(): Theme {
-  return useSyncExternalStore(subscribe, readTheme, () => "dark");
+  return THEME;
 }
-
-export { CHROME as THEME_CHROME, KEY as THEME_KEY };

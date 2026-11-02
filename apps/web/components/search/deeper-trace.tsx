@@ -129,7 +129,7 @@ export function DeeperTrace({
           <div className="rounded-lg bg-card p-4 border border-border space-y-2 mb-4">
             <div className="flex justify-between items-center text-sm">
               <span className="text-fg-3">Audit Status:</span>
-              <span className="inline-flex items-center rounded-full bg-amber-500/10 px-2.5 py-0.5 text-xs font-semibold text-amber-600 dark:text-amber-400">
+              <span className="inline-flex items-center rounded-full bg-amber-500/10 px-2.5 py-0.5 text-xs font-semibold text-amber-600">
                 Pending Audit
               </span>
             </div>
@@ -319,7 +319,7 @@ export function DeeperTrace({
                 {isSignedIn && (
                   <p className="flex items-start gap-2 rounded-lg border border-border bg-muted/30 p-4 text-sm text-fg-2">
                     <CheckCircle2Icon
-                      className="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+                      className="mt-0.5 size-4 shrink-0 text-emerald-600"
                       aria-hidden="true"
                     />
                     We will contact you on the mobile number verified when you signed in, and the

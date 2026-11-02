@@ -1,5 +1,4 @@
 import { Wordmark } from "@/components/brand/wordmark";
-import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { NavLinks, type NavItem } from "@/components/site/nav-links";
 import { AccountLink } from "@/components/auth/account-link";
 import { SignOutButton } from "@/components/auth/sign-out-button";
@@ -52,7 +51,6 @@ export async function AppHeader() {
           <NavLinks items={nav} label="App" />
         </div>
         <div className="order-2 flex items-center gap-2 sm:order-3">
-          <ThemeToggle />
           {viewer ? <SignOutButton /> : <AccountLink />}
         </div>
       </div>

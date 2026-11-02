@@ -21,8 +21,8 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#05080E",
-  colorScheme: "dark",
+  themeColor: "#F3F6FA",
+  colorScheme: "light",
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
@@ -32,12 +32,18 @@ export const viewport: Viewport = {
 // visitor has no reduced-motion preference, so entrance states never flash.
 const motionFlag = `try{if(matchMedia('(prefers-reduced-motion: no-preference)').matches)document.documentElement.dataset.motion='on'}catch(e){}`;
 
-// Also before first paint: restore a theme the visitor chose, so it never flashes.
-const themeFlag = `try{var t=localStorage.getItem('finsol:theme');document.documentElement.dataset.theme=t==='light'?'light':'dark'}catch(e){document.documentElement.dataset.theme='dark'}`;
+// The site is light only, day and night: the theme is fixed in the server-rendered
+// markup, so there is nothing to restore before paint and nothing can flash dark.
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en-IN" data-theme="dark" suppressHydrationWarning>
+    <html
+      lang="en-IN"
+      data-theme="light"
+      className="light"
+      style={{ colorScheme: "light" }}
+      suppressHydrationWarning
+    >
       <head>
         <link
           rel="preload"
@@ -46,9 +52,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           type="font/woff2"
           crossOrigin=""
         />
-        <script dangerouslySetInnerHTML={{ __html: themeFlag + ";" + motionFlag }} />
+        <script dangerouslySetInnerHTML={{ __html: motionFlag }} />
       </head>
-      <body className="min-h-dvh bg-ink-950 text-fg">
+      <body className="min-h-dvh bg-slate-50 text-slate-900 antialiased selection:bg-amber-100 selection:text-amber-900">
         <a
           href="#main"
           className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:rounded-md bg-brand focus:px-4 focus:py-3 focus:font-semibold focus:text-on-brand"
