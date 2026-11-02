@@ -97,12 +97,9 @@ export class RegistrarAdapter implements SourceAdapter {
         : "Issuers registered with MUFG Intime (Link Intime)";
   }
   targets(options?: { limit?: number; query?: string }) {
-    return registerRows(
-      this.pool,
-      "registrar ~* $1",
-      [REGISTRAR_PATTERNS[this.registrar].source],
-      options,
-    );
+    // Postgres regular expressions spell a word boundary \y; \b there means backspace.
+    const pattern = REGISTRAR_PATTERNS[this.registrar].source.replace(/\\b/g, "\\y");
+    return registerRows(this.pool, "registrar ~* $1", [pattern], options);
   }
 }
 
