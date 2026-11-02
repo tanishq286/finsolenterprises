@@ -891,8 +891,8 @@ export async function ingestStatement(
   return result;
 }
 
-type Accepted = { index: number; companyId: string; row: ParsedRow; folioHash: string };
-const holderNorm = (r: ParsedRow) =>
+export type Accepted = { index: number; companyId: string; row: ParsedRow; folioHash: string };
+export const holderNorm = (r: ParsedRow) =>
   [r.first, r.middle, r.last].filter(Boolean).join(" ").toUpperCase();
 
 /**
@@ -900,7 +900,7 @@ const holderNorm = (r: ParsedRow) =>
  * event (same holder, date and amount) adds its source instead of a new row;
  * different dates or years stay separate.
  */
-async function writeDividendEvents(
+export async function writeDividendEvents(
   db: PrismaClient,
   documentId: string,
   accepted: Accepted[],
@@ -935,7 +935,7 @@ async function writeDividendEvents(
 }
 
 /** A share quantity exactly as this statement reports it, with what it means. */
-async function writeShareSnapshots(
+export async function writeShareSnapshots(
   db: PrismaClient,
   documentId: string,
   accepted: Accepted[],

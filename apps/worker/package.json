@@ -2,23 +2,24 @@
   "name": "@finsol/worker",
   "version": "0.2.0",
   "private": true,
-  "description": "Finsol Enterprises Pan-India Background Ingestion Harvester Worker",
+  "description": "Finsol Enterprises Pan-India harvester: drop-folder statements and register-driven discovery",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "start": "node dist/index.js",
-    "harvest": "node --experimental-strip-types src/index.ts"
+    "start": "node dist/index.js"
   },
   "dependencies": {
     "@finsol/db": "*",
     "@finsol/shared": "*",
-    "dotenv": "^17.2.0"
+    "dotenv": "^17.2.0",
+    "pg": "^8.23.1"
   },
   "devDependencies": {
     "@types/node": "^20",
-    "typescript": "^5"
+    "typescript": "^5",
+    "@types/pg": "^8.23.1"
   }
 }

@@ -124,7 +124,10 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
         )}
 
         {data && data.total === 0 && (
-          <div className="panel flex flex-col items-start gap-5 p-8 border-2 border-primary/20 bg-card shadow-sm rounded-xl" data-testid="search-no-match">
+          <div
+            className="panel flex flex-col items-start gap-5 p-8 border-2 border-primary/20 bg-card shadow-sm rounded-xl"
+            data-testid="search-no-match"
+          >
             <div className="flex items-center gap-3">
               <span className="flex size-11 items-center justify-center rounded-full bg-primary/10 text-primary">
                 <SearchXIcon className="size-6" aria-hidden="true" />
@@ -133,20 +136,31 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
                 <h2 className="text-2xl font-bold text-fg">
                   Instant Search Results for {who} in {where}
                 </h2>
-                <p className="text-sm text-fg-3">
-                  0 direct matches found in current digital index
-                </p>
+                <p className="text-sm text-fg-3">0 direct matches found in current digital index</p>
               </div>
             </div>
 
             <div className="w-full rounded-lg bg-primary/10 p-5 border border-primary/25">
-              <p className="text-lg font-semibold text-fg leading-relaxed">
-                &ldquo;We searched our instant index of top listed companies. Don&apos;t worry if your name wasn&apos;t found—over 3,000 older companies and physical share certificates require an archival RTA trace.&rdquo;
+              <p
+                className="text-lg font-semibold text-fg leading-relaxed"
+                data-testid="deeper-trace-reassurance"
+              >
+                We searched our instant index of top listed companies. Don&apos;t worry if your name
+                wasn&apos;t found—over 3,000 older companies and physical share certificates require
+                an archival RTA trace.
               </p>
             </div>
 
             <p className="max-w-[75ch] text-sm text-fg-2">
-              Physical share certificates, name variations, old address discrepancies, or legacy shares held in company suspense accounts often do not appear in basic online registries. Our specialist recovery research desk can initiate an archival registry investigation at zero upfront cost.
+              The instant index currently holds records from{" "}
+              {data.coverage.companiesWithRecordsCount === 0
+                ? "no company statements yet"
+                : data.coverage.companiesWithRecordsCount === 1
+                  ? "one company"
+                  : `${data.coverage.companiesWithRecordsCount} companies`}
+              . Physical certificates, name variations, old addresses and shares held in company
+              suspense accounts often appear in none of the published lists. Our analysts can look
+              further, at no upfront cost.
             </p>
 
             {data.liveRefreshId && <LiveRefresh id={data.liveRefreshId} />}

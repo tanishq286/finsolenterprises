@@ -1,74 +1,75 @@
-import type { IndianState } from "@finsol/shared";
-import type { StagedFolio } from "../bulk-copy.js";
+/**
+ * Pan-India harvesting works only from real, attributable sources:
+ *
+ * - Statements a company publishes itself under the IEPF Rules, found on its
+ *   investor-relations pages by the acquisition worker (robots.txt honoured,
+ *   one request at a time per host, 401/403/429 recorded and never bypassed).
+ * - Files a person downloads from the company's own site into the drop
+ *   folder, with a manifest naming the company and where the file came from.
+ *
+ * The registrars' (KFin Technologies, MUFG Intime) investor portals are
+ * per-holder lookups behind a CAPTCHA, not bulk publications; they are not
+ * scraped. A registrar adapter therefore selects the issuers that registrar
+ * serves (as recorded in the source register) and queues discovery of the
+ * statements those issuers publish.
+ *
+ * No adapter generates rows. A source that yields nothing yields nothing.
+ */
 
-/** Raw record from any RTA spreadsheet, CSV, or portal export */
-export interface RawInputRow {
-  [key: string]: unknown;
-}
+export type RegistrarKey = "KFINTECH" | "LINK_INTIME";
 
-/** Company metadata for target RTA registries */
-export interface TargetCompany {
+/** One issuer selected for harvesting, as the source register records it. */
+export interface HarvestTarget {
+  registerId: string;
   name: string;
-  cin?: string;
-  isin?: string;
-  nseSymbol?: string;
-  bseCode?: string;
-  rta: "KFINTECH" | "LINK_INTIME" | "IN_HOUSE" | "OTHER";
-  iepfRegistryUrl?: string;
-  sampleFile?: string;
+  nseSymbol: string | null;
+  isin: string | null;
+  registrar: string | null;
+  website: string | null;
+  irUrl: string | null;
+  companyId: string | null;
 }
 
-/** Standardized normalized record ready for database encryption and staging */
-export interface NormalizedFolioRecord extends StagedFolio {
-  batchRunId: string;
-  sourceCompany: string;
-  sourceRta: string;
-  sourceFileName: string;
-  rawAmount?: number;
+export interface SourceAdapter {
+  readonly id: string;
+  readonly displayName: string;
+  /** Issuers this adapter covers, from the source register (no network access). */
+  targets(options?: { limit?: number; query?: string }): Promise<HarvestTarget[]>;
 }
 
-/** Result statistics for a chunk or batch execution */
-export interface BatchExecutionResult {
-  batchRunId: string;
-  sourceCompany: string;
-  sourceRta: string;
-  sourceFile: string;
+/** Drop-folder manifest entry: who published the file, and where it came from. */
+export interface ManifestEntry {
+  /** File name inside the drop folder. */
+  file: string;
+  /** NSE symbol, ISIN or CIN of the company; it must be in the catalogue or the register. */
+  company: string;
+  /** The page or file URL on the company's own website. */
+  sourceUrl: string;
+  /** ISO date the file was downloaded. */
+  retrievedAt: string;
+  /** e.g. "FY 2024-25" or "as on 31.03.2023". */
+  reportingPeriod?: string;
+  /** Share lists only: whether the shares were transferred or are only due. */
+  shareBasis?: "PROPOSED_IEPF_TRANSFER" | "TRANSFERRED_TO_IEPF";
+}
+
+export interface FileHarvestResult {
+  file: string;
+  company: string;
+  companyId: string | null;
+  batchRunId: string | null;
+  status: "IMPORTED" | "ALREADY_IMPORTED" | "DRY_RUN" | "FAILED" | "UNSUPPORTED";
+  detail?: string;
+  bytes: number;
   totalRows: number;
   validRows: number;
   warningRows: number;
   quarantinedRows: number;
   insertedRows: number;
   updatedRows: number;
-  totalShares: number;
-  totalAmountRupees: number;
-  peakMemoryMb: number;
+  amountTotal: number;
+  chunks: number;
+  peakRssMb: number;
+  peakHeapMb: number;
   durationMs: number;
-  status: "COMPLETED" | "FAILED" | "ROLLED_BACK";
-  error?: string;
-}
-
-/** Interface for all RTA portal adapters */
-export interface RtaAdapter {
-  readonly id: string;
-  readonly displayName: string;
-  readonly rtaType: "KFINTECH" | "LINK_INTIME" | "IN_HOUSE" | "OTHER";
-
-  /** Discovers candidate published files or endpoints for target companies */
-  discover(options?: { limit?: number; companyQuery?: string }): Promise<TargetCompany[]>;
-
-  /** Generates or retrieves sample IEPF-2 test datasets for streaming verification */
-  getSampleFiles(): Array<{
-    company: TargetCompany;
-    filePath?: string;
-    generateRows?: (count: number) => RawInputRow[];
-  }>;
-}
-
-/** Options for streaming chunk processor */
-export interface ChunkStreamingOptions {
-  chunkSize?: number;
-  concurrency?: number;
-  batchRunId?: string;
-  dryRun?: boolean;
-  onChunkProcessed?: (chunkIndex: number, rowCount: number, memoryMb: number) => void;
 }

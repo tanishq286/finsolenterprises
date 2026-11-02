@@ -31,9 +31,11 @@
     "acquire": "node dist/cli/acquire.js"
   },
   "dependencies": {
+    "@finsol/shared": "*",
     "@prisma/adapter-pg": "7.10.1",
     "@prisma/client": "7.10.1",
-    "@finsol/shared": "*",
+    "csv-parse": "^7.0.3",
+    "exceljs": "^4.4.0",
     "pdfjs-dist": "^6.4.299",
     "pg": "^8.23.1",
     "pg-copy-streams": "^7.0.0",

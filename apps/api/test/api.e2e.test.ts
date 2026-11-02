@@ -1691,6 +1691,7 @@ describe("assisted traces", () => {
       .send(body)
       .expect(201);
     expect(again.body.id).toBe(traceId);
+    expect(first.body.reference).toMatch(/^FIN-TRC-[A-HJ-NP-Z2-9]{6}$/);
     expect(first.body).not.toHaveProperty("detailsEnc");
     const stored = await app
       .get(PrismaService)
@@ -1698,6 +1699,25 @@ describe("assisted traces", () => {
     expect(stored.detailsEnc).toMatch(/^v1:/);
     expect(stored.holderName).not.toContain(body.holderName);
     expect(JSON.stringify(stored.indexSnapshot)).toContain("Index coverage at request time");
+  });
+  it("takes contact details only from the signed-in account, whose mobile was OTP-verified", async () => {
+    // Unverified, typed-in contact numbers are refused.
+    await request(http)
+      .post("/api/v1/traces")
+      .set(auth("sunita"))
+      .send({ ...body, requestId: randomUUID(), claimantMobile: "9999999999" })
+      .expect(400);
+    const detail = await request(http)
+      .get(`/api/v1/admin/traces/${traceId}`)
+      .set(auth("analyst"))
+      .expect(200);
+    const prisma = app.get(PrismaService).client;
+    const trace = await prisma.traceRequest.findUniqueOrThrow({ where: { id: traceId } });
+    const account = await prisma.user.findUniqueOrThrow({ where: { id: trace.userId! } });
+    expect(detail.body.details.contact).toMatchObject({
+      phone: account.phone,
+      phoneVerifiedBy: "LOGIN_OTP",
+    });
   });
   it("isolates members and protects staff access", async () => {
     const own = await request(http).get("/api/v1/traces").set(auth("sunita")).expect(200);
@@ -1712,6 +1732,11 @@ describe("assisted traces", () => {
     await request(http).get(`/api/v1/admin/traces/${traceId}`).set(auth("meera")).expect(403);
   });
   it("requires recorded source evidence before closure", async () => {
+    await request(http)
+      .patch(`/api/v1/admin/traces/${traceId}`)
+      .set(auth("analyst"))
+      .send({ status: "RTA_ARCHIVE_SEARCHED" })
+      .expect(400);
     await request(http)
       .patch(`/api/v1/admin/traces/${traceId}`)
       .set(auth("analyst"))

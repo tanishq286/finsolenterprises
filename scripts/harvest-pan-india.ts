@@ -1,101 +1,129 @@
+/**
+ * Pan-India IEPF harvester.
+ *
+ *   npm run ingest:pan-india -- files [--dir data/pan-india-drop] [--only a.xlsx,b.pdf] [--chunk 5000] [--dry-run]
+ *       Streams the statements listed in <dir>/manifest.json into the state partitions.
+ *       Each file is one batch (an ingestion job id stamped on every record it writes).
+ *   npm run ingest:pan-india -- discover --rta kfintech|link_intime|priority[,...] [--limit N] [--query text] [--enqueue]
+ *       Lists issuers from the source register (by registrar or priority list) and, with
+ *       --enqueue, queues discovery of the statements on each issuer's own website for
+ *       `npm run acquire -w @finsol/db -- work`.
+ *   npm run ingest:pan-india -- rollback <batchRunId>
+ *       Deletes the holder records that batch created; records it only updated are kept for review.
+ *
+ * Nothing here generates records. Writes go to DATABASE_URL (default: the local
+ * development database); a non-local database needs --confirm-production.
+ */
 import "dotenv/config";
+import { resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { PanIndiaHarvester } from "../apps/worker/dist/harvester.js";
 
-async function main() {
-  const { values } = parseArgs({
-    options: {
-      limit: { type: "string", short: "l", default: "5" },
-      rows: { type: "string", short: "r", default: "1000" },
-      chunk: { type: "string", short: "c", default: "5000" },
-      rta: { type: "string", default: "ALL" },
-      query: { type: "string", short: "q" },
-      "dry-run": { type: "boolean", default: false },
-      rollback: { type: "string" },
-    },
-  });
+import { PanIndiaHarvester, type AdapterId } from "../apps/worker/dist/harvester.js";
 
-  const harvester = new PanIndiaHarvester();
+const { values, positionals } = parseArgs({
+  allowPositionals: true,
+  options: {
+    dir: { type: "string", default: "data/pan-india-drop" },
+    only: { type: "string" },
+    chunk: { type: "string", default: "5000" },
+    "dry-run": { type: "boolean", default: false },
+    rta: { type: "string", default: "priority" },
+    limit: { type: "string" },
+    query: { type: "string", short: "q" },
+    enqueue: { type: "boolean", default: false },
+    "confirm-production": { type: "boolean", default: false },
+  },
+});
 
-  try {
-    if (values.rollback) {
-      console.log(`\n========================================`);
-      console.log(`PAN-INDIA ROLLBACK ENGINE`);
-      console.log(`========================================`);
-      console.log(`Rolling back batchRunId: ${values.rollback}`);
-      const res = await harvester.rollback(values.rollback);
-      console.log(`[Success] Deleted ${res.deletedCount} folios associated with batch.`);
-      return;
-    }
-
-    const limit = parseInt(values.limit ?? "5", 10);
-    const rowsPerCompany = parseInt(values.rows ?? "1000", 10);
-    const chunkSize = parseInt(values.chunk ?? "5000", 10);
-    const dryRun = values["dry-run"] ?? false;
-    const rtaArg = values.rta?.toUpperCase();
-    const rta =
-      rtaArg === "KFINTECH"
-        ? "KFINTECH"
-        : rtaArg === "LINK_INTIME"
-          ? "LINK_INTIME"
-          : rtaArg === "OTHER"
-            ? "OTHER"
-            : "ALL";
-
-    console.log(`\n======================================================`);
-    console.log(`PAN-INDIA IEPF-2 BULK INGESTION HARVESTER`);
-    console.log(`======================================================`);
-    console.log(`Target Limit:        ${limit} companies`);
-    console.log(`Rows Per Company:    ${rowsPerCompany}`);
-    console.log(`Streaming Chunk:     ${chunkSize} rows`);
-    console.log(`RTA Scope:           ${rta}`);
-    console.log(`Execution Mode:      ${dryRun ? "DRY RUN (No DB Writes)" : "LIVE INGESTION (COPY + Merge)"}`);
-    console.log(`------------------------------------------------------\n`);
-
-    const result = await harvester.run({
-      limit,
-      rowsPerCompany,
-      chunkSize,
-      rta,
-      query: values.query,
-      dryRun,
-    });
-
-    console.log(`\n======================================================`);
-    console.log(`BATCH INGESTION RESULTS`);
-    console.log(`======================================================`);
-    console.table(
-      result.results.map((r) => ({
-        Company: r.sourceCompany.slice(0, 25),
-        RTA: r.sourceRta,
-        BatchId: r.batchRunId.slice(0, 8),
-        TotalRows: r.totalRows,
-        Valid: r.validRows,
-        Quarantine: r.quarantinedRows,
-        Inserted: r.insertedRows,
-        Updated: r.updatedRows,
-        Shares: r.totalShares,
-        Amount: `₹${r.totalAmountRupees}`,
-        PeakHeap: `${r.peakMemoryMb} MB`,
-        Duration: `${r.durationMs}ms`,
-        Status: r.status,
-      })),
-    );
-
-    console.log(`------------------------------------------------------`);
-    console.log(`Total Companies:     ${result.results.length}`);
-    console.log(`Total Ingested:      ${result.totalIngested} folios`);
-    console.log(`Total Valid:         ${result.totalValid}`);
-    console.log(`Total Quarantined:   ${result.totalQuarantined}`);
-    console.log(`Peak Memory:         ${result.peakMemoryMb} MB (Flat Streaming Heap)`);
-    console.log(`Total Time:          ${result.durationMs} ms`);
-    console.log(`======================================================\n`);
-  } finally {
-    await harvester.close();
-  }
+function fail(msg: string): never {
+  console.error(msg);
+  process.exit(2);
 }
 
-main().catch((err) => {
-  console.error("Pan-India Ingestion Failed:", err);
-  process.exit(1);
-});
+const url = process.env.DATABASE_URL;
+const local = !url || /@(127\.0\.0\.1|localhost)(:\d+)?\//.test(url);
+const command = positionals[0];
+if (!command || !["files", "discover", "rollback"].includes(command))
+  fail(
+    "Usage: ingest:pan-india -- files | discover | rollback <batchRunId>  (see scripts/harvest-pan-india.ts)",
+  );
+if (!local && !values["confirm-production"] && !(command === "files" && values["dry-run"]))
+  fail(
+    "DATABASE_URL is not a local database. Pass --confirm-production only with written approval.",
+  );
+
+const chunk = Number(values.chunk);
+if (!Number.isInteger(chunk) || chunk < 100 || chunk > 100_000)
+  fail("--chunk must be 100 to 100000.");
+
+const harvester = new PanIndiaHarvester();
+try {
+  if (command === "rollback") {
+    const id = positionals[1] ?? fail("Pass the batchRunId to roll back.");
+    const r = await harvester.rollback(id);
+    console.log(
+      `Rolled back ${id}: ${r.deleted} records deleted, ${r.keptForReview} pre-existing records kept for review, ${r.dividendEventsRemoved} dividend events removed.`,
+    );
+  } else if (command === "discover") {
+    const ids = values.rta.split(",").map((s) => s.trim().toLowerCase()) as AdapterId[];
+    if (ids.some((i) => !["kfintech", "link_intime", "priority"].includes(i)))
+      fail("--rta takes kfintech, link_intime and/or priority.");
+    const limit = values.limit ? Number(values.limit) : undefined;
+    const out = await harvester.discover({
+      adapters: ids,
+      limit,
+      query: values.query,
+      enqueue: values.enqueue,
+    });
+    for (const o of out) {
+      console.log(
+        `\n${o.adapter}: ${o.targets.length} issuers in the register${values.enqueue ? `, ${o.queued} queued for discovery` : ""}`,
+      );
+      console.table(
+        o.targets.slice(0, 25).map((t) => ({
+          Symbol: t.nseSymbol ?? "",
+          Name: t.name.slice(0, 40),
+          Registrar: (t.registrar ?? "not recorded").slice(0, 30),
+          "IR page": t.irUrl ? "yes" : t.website ? "website only" : "none",
+        })),
+      );
+    }
+    if (out.every((o) => o.targets.length === 0))
+      console.log(
+        "\nThe register has no matching issuers. Load it first: npm run acquire -w @finsol/db -- universe",
+      );
+  } else {
+    const dir = resolve(values.dir);
+    const results = await harvester.files(
+      dir,
+      { dryRun: values["dry-run"], chunkSize: chunk, only: values.only?.split(",") },
+      (file, i) =>
+        console.log(
+          `  ${file}: chunk ${i.chunk}, ${i.rowsRead} rows read, RSS ${i.rssMb} MB, heap ${i.heapMb} MB`,
+        ),
+    );
+    console.table(
+      results.map((r) => ({
+        File: r.file.slice(0, 34),
+        Company: r.company,
+        Batch: r.batchRunId?.slice(0, 8) ?? "",
+        Status: r.status,
+        Rows: r.totalRows,
+        Valid: r.validRows,
+        Warning: r.warningRows,
+        Quarantined: r.quarantinedRows,
+        Inserted: r.insertedRows,
+        Updated: r.updatedRows,
+        "Amount ₹": r.amountTotal,
+        Chunks: r.chunks,
+        "Peak RSS MB": r.peakRssMb,
+        "Peak heap MB": r.peakHeapMb,
+        "Time ms": r.durationMs,
+      })),
+    );
+    for (const r of results) if (r.detail) console.log(`${r.file}: ${r.detail}`);
+    if (results.some((r) => r.status === "FAILED")) process.exitCode = 1;
+  }
+} finally {
+  await harvester.close();
+}

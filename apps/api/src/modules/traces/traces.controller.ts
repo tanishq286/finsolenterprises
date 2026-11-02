@@ -17,9 +17,6 @@ export const traceSchema = z
     certificateStatus: z.enum(["AVAILABLE", "LOST", "PARTIAL", "UNKNOWN"]).optional(),
     companies: z.string().trim().max(500).optional(),
     years: z.string().trim().max(100).optional(),
-    claimantName: z.string().trim().max(120).optional(),
-    claimantEmail: z.string().trim().email().max(150).optional(),
-    claimantMobile: z.string().trim().max(20).optional(),
     consent: z.literal(true),
   })
   .strict();

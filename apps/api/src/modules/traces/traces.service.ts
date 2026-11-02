@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { randomInt } from "node:crypto";
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { decryptField, encryptField } from "@finsol/db";
 import { PrismaService } from "../../common/prisma.service.js";
@@ -6,6 +6,8 @@ import { AuditService } from "../../common/audit.service.js";
 import type { SessionClaims } from "../../common/auth/tokens.service.js";
 import { SearchService } from "../search/search.service.js";
 import type { CheckInput, TraceInput } from "./traces.controller.js";
+
+const REF_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 const summary = {
   id: true,
@@ -22,47 +24,63 @@ export class TracesService {
     private readonly audit: AuditService,
   ) {}
   async create(body: TraceInput, user: SessionClaims) {
-    const reference = `FIN-TRC-${createHash("sha256").update(`${user.sub}:${body.requestId}`).digest("hex").slice(0, 6).toUpperCase()}`;
-    const prior = await this.prisma.client.traceRequest.findUnique({
-      where: { reference },
+    // A retried submission (same requestId from the same account) returns the first request.
+    const prior = await this.prisma.client.traceRequest.findFirst({
+      where: { userId: user.sub, indexSnapshot: { path: ["requestId"], equals: body.requestId } },
       select: summary,
     });
     if (prior) return prior;
+    // Contact details are the account's own: its mobile was verified by OTP at sign-in.
     const account = await this.prisma.client.user.findUniqueOrThrow({
       where: { id: user.sub },
-      select: { phone: true, email: true },
+      select: { phone: true, email: true, name: true },
     });
-    const { requestId: _requestId, consent: _consent, claimantName, claimantEmail, claimantMobile, ...details } = body;
+    const { requestId, consent: _consent, ...details } = body;
     const contactInfo = {
-      phone: claimantMobile || account.phone,
-      email: claimantEmail || account.email,
-      name: claimantName || null,
+      phone: account.phone,
+      phoneVerifiedBy: "LOGIN_OTP",
+      email: account.email,
+      name: account.name,
     };
     const coverage = await this.search.coverage();
-    return this.prisma.client.traceRequest.upsert({
-      where: { reference },
-      update: {},
-      select: summary,
-      create: {
-        reference,
-        userId: user.sub,
-        holderName: encryptField(body.holderName, this.prisma.fieldKeys),
-        scope: body.scope,
-        status: "PENDING_AUDIT",
-        detailsEnc: encryptField(
-          JSON.stringify({ ...details, contact: contactInfo, consentVersion: "assisted-trace-v1" }),
-          this.prisma.fieldKeys,
-        ),
-        consentAt: new Date(),
-        indexSnapshot: JSON.parse(
-          JSON.stringify({
-            recordedAt: new Date().toISOString(),
-            coverage,
-            meaning: "Index coverage at request time; not proof that all sources were searched.",
-          }),
-        ),
-      },
-    });
+    for (let attempt = 0; ; attempt++) {
+      // FIN-TRC- plus 6 characters from an unambiguous alphabet: about 1.07 billion values.
+      const reference = `FIN-TRC-${Array.from({ length: 6 }, () => REF_ALPHABET[randomInt(REF_ALPHABET.length)]).join("")}`;
+      try {
+        return await this.prisma.client.traceRequest.create({
+          select: summary,
+          data: {
+            reference,
+            userId: user.sub,
+            holderName: encryptField(body.holderName, this.prisma.fieldKeys),
+            scope: body.scope,
+            status: "PENDING_AUDIT",
+            detailsEnc: encryptField(
+              JSON.stringify({
+                ...details,
+                contact: contactInfo,
+                consentVersion: "assisted-trace-v1",
+              }),
+              this.prisma.fieldKeys,
+            ),
+            consentAt: new Date(),
+            indexSnapshot: JSON.parse(
+              JSON.stringify({
+                recordedAt: new Date().toISOString(),
+                requestId,
+                coverage,
+                meaning:
+                  "Index coverage at request time; not proof that all sources were searched.",
+              }),
+            ),
+          },
+        });
+      } catch (e) {
+        // Unique violation on the reference: draw another (bounded).
+        if ((e as { code?: string }).code === "P2002" && attempt < 5) continue;
+        throw e;
+      }
+    }
   }
   async mine(user: SessionClaims) {
     return this.prisma.client.traceRequest.findMany({
@@ -150,9 +168,18 @@ export class TracesService {
         throw new BadRequestException(
           "Consent was withdrawn; create a new request with fresh consent.",
         );
-      if (status.startsWith("CLOSED") || status === "MATCH_FOUND") {
+      if (
+        status.startsWith("CLOSED") ||
+        status === "MATCH_FOUND" ||
+        status === "RTA_ARCHIVE_SEARCHED"
+      ) {
         const count = await tx.traceCheck.count({
-          where: { traceId: id, ...(status === "CLOSED_FOUND" || status === "MATCH_FOUND" ? { outcome: "MATCH_FOUND" } : {}) },
+          where: {
+            traceId: id,
+            ...(status === "CLOSED_FOUND" || status === "MATCH_FOUND"
+              ? { outcome: "MATCH_FOUND" }
+              : {}),
+          },
         });
         if (!count && status !== "CLOSED")
           throw new BadRequestException("Record the source check before closing this request.");

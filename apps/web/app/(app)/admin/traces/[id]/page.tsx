@@ -11,9 +11,11 @@ interface Trace {
   details: {
     relationship: string;
     oldCity?: string;
+    oldAddress?: string;
+    certificateStatus?: "AVAILABLE" | "LOST" | "PARTIAL" | "UNKNOWN";
     companies?: string;
     years?: string;
-    contact: { phone: string; email?: string };
+    contact: { phone: string; email?: string | null; name?: string; phoneVerifiedBy?: string };
   };
   indexSnapshot: unknown;
   checks: {
@@ -44,13 +46,23 @@ export default async function TraceDetail({ params }: { params: Promise<{ id: st
         <dd>{data.details?.relationship ?? "Not specified"}</dd>
         <dt>Claimant Contact</dt>
         <dd>
-          {data.details?.contact?.phone ?? "No phone"} {data.details?.contact?.email ?? "No email"}
+          {data.details?.contact?.name ? `${data.details.contact.name} · ` : ""}
+          {data.details?.contact?.phone ?? "No phone"}
+          {data.details?.contact?.phoneVerifiedBy === "LOGIN_OTP"
+            ? " (verified by OTP at sign-in)"
+            : ""}{" "}
+          · {data.details?.contact?.email ?? "No email"}
         </dd>
         <dt>Physical Certificate Status</dt>
-        <dd>{(data.details as any)?.certificateStatus ?? "UNKNOWN"}</dd>
+        <dd>{data.details?.certificateStatus ?? "UNKNOWN"}</dd>
         <dt>Optional clues</dt>
         <dd>
-          {[data.details?.oldCity, (data.details as any)?.oldAddress, data.details?.companies, data.details?.years]
+          {[
+            data.details?.oldCity,
+            data.details?.oldAddress,
+            data.details?.companies,
+            data.details?.years,
+          ]
             .filter(Boolean)
             .join(" · ") || "None supplied"}
         </dd>

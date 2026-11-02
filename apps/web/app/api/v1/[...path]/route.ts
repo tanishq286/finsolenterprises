@@ -9,7 +9,7 @@ import { API_URL, SESSION_COOKIE, WHO_COOKIE } from "@/lib/api/config";
  * sees a token. Only listed API areas are reachable.
  */
 const ALLOWED =
-  /^(auth\/(otp\/request|otp\/verify|otp\/status|me)|search\/(unclaimed|claim|live\/[0-9a-f-]{36})|companies(\/.*)?|market\/(prices|equities(\/.*)?)|valuation\/report|stats|cases(\/.*)?|crm\/.+|associates\/.+|admin\/(ingestion|companies)(\/.*)?|health)$/;
+  /^(auth\/(otp\/request|otp\/verify|otp\/status|me)|search\/(unclaimed|claim|live\/[0-9a-f-]{36})|companies(\/.*)?|market\/(prices|equities(\/.*)?)|valuation\/report|stats|cases(\/.*)?|traces(\/[0-9a-f-]{36}\/withdraw)?|crm\/.+|associates\/.+|admin\/(ingestion|companies)(\/.*)?|admin\/traces(\/[0-9a-f-]{36}(\/checks)?)?|health)$/;
 
 const secure = process.env.NODE_ENV === "production";
 

@@ -22,3 +22,5 @@ export * from "./statement-links.js";
 export { fetchBuffer, robotsAllows, sleep, USER_AGENT } from "./http.js";
 export { DROP_DIR, detectKind, processFile } from "./ingest-pan-india.js";
 export * from "./pan-india/index.js";
+export * from "./stream-ingest.js";
+export { openStatementStream, STREAM_PARSER_VERSION } from "./stream-reader.js";
