@@ -211,6 +211,15 @@ async function discover(ctx: Ctx, registerId: string): Promise<string> {
       res.result === "OK" ? "30" : "90",
     ],
   );
+  // The registrar the issuer names on its own pages, with where and when it was read.
+  // A registrar recorded by a person (basis not from a crawl) is never overwritten.
+  if (res.registrar)
+    await ctx.pool.query(
+      `UPDATE source_register SET registrar = $2,
+              registrar_basis = 'named on ' || $3 || ' (read ' || to_char(now(), 'YYYY-MM-DD') || ')'
+        WHERE id = $1 AND (registrar IS NULL OR registrar_basis LIKE 'named on %')`,
+      [registerId, res.registrar.name, res.registrar.foundOn],
+    );
   return res.result;
 }
 

@@ -8,6 +8,7 @@
 import { formatOf } from "../statement-reader.js";
 import { classifyDocument, safeDecode, INVESTOR_LINK, type DocClass } from "./classify.js";
 import { politeGet } from "./http.js";
+import { decideRegistrar, newTally, pageText, tallyPage } from "./registrar.js";
 
 export interface FoundDocument {
   url: string;
@@ -31,6 +32,8 @@ export interface CrawlResult {
   irUrl: string | null;
   pagesFetched: number;
   documents: FoundDocument[];
+  /** The registrar (RTA) the issuer's pages name, when one name clearly dominates. */
+  registrar: { name: string; foundOn: string } | null;
 }
 
 const DOC_KEYWORDS =
@@ -77,6 +80,7 @@ export async function crawlIssuer(start: string, maxPages = 12): Promise<CrawlRe
   let firstFailure: CrawlResult["result"] | null = null;
   let detail = "";
   let scriptHeavy = false;
+  const registrars = newTally();
 
   while (queue.length && pages < maxPages) {
     const { url, depth } = queue.shift()!;
@@ -102,6 +106,7 @@ export async function crawlIssuer(start: string, maxPages = 12): Promise<CrawlRe
     pages++;
     if (!res.contentType?.includes("html")) continue;
     const html = res.body.toString("utf8");
+    tallyPage(registrars, pageText(html), res.finalUrl);
     const found = links(html, res.finalUrl);
     if (found.length < 5 && /<script/i.test(html)) scriptHeavy = true;
     for (const l of found) {
@@ -124,7 +129,14 @@ export async function crawlIssuer(start: string, maxPages = 12): Promise<CrawlRe
   }
   const docs = [...documents.values()];
   if (pages === 0)
-    return { result: firstFailure ?? "ERROR", detail, irUrl: null, pagesFetched: 0, documents: [] };
+    return {
+      result: firstFailure ?? "ERROR",
+      detail,
+      irUrl: null,
+      pagesFetched: 0,
+      documents: [],
+      registrar: null,
+    };
   return {
     result: docs.length ? "OK" : scriptHeavy ? "SCRIPT_RENDERED" : "NO_DOCUMENTS",
     detail: docs.length
@@ -135,5 +147,6 @@ export async function crawlIssuer(start: string, maxPages = 12): Promise<CrawlRe
     irUrl,
     pagesFetched: pages,
     documents: docs,
+    registrar: decideRegistrar(registrars),
   };
 }

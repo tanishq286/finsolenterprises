@@ -3,7 +3,8 @@
  *
  *   acquire universe                         load NSE current, SME, delisted lists and aliases
  *   acquire seed <file.csv>                  apply reviewed websites / investor pages
- *   acquire enqueue [--all] [--limit N]      queue discovery for issuers with a website
+ *   acquire enqueue [--all] [--force] [--limit N]  queue discovery for issuers with a website
+ *                                            (--force ignores the next review date)
  *   acquire work [--concurrency 6] [--minutes 30]
  *   acquire report [--json]                  aggregate coverage (no personal data)
  *   acquire export <path.json>               machine-readable source register
@@ -26,6 +27,7 @@ async function main() {
     allowPositionals: true,
     options: {
       all: { type: "boolean", default: false },
+      force: { type: "boolean", default: false },
       limit: { type: "string" },
       concurrency: { type: "string", default: "6" },
       minutes: { type: "string", default: "30" },
@@ -66,7 +68,7 @@ async function main() {
       const { rows } = await pool.query<{ id: string }>(
         `SELECT id FROM source_register
           WHERE ${values.all ? "TRUE" : "(website IS NOT NULL OR ir_url IS NOT NULL)"}
-            AND (next_review_at IS NULL OR next_review_at <= now())
+            AND (${values.force ? "TRUE" : "next_review_at IS NULL OR next_review_at <= now()"})
           ORDER BY (ir_url IS NULL), name LIMIT $1`,
         [Number(values.limit ?? 100000)],
       );

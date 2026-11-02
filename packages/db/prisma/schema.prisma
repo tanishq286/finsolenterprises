@@ -743,6 +743,8 @@ model SourceRegister {
   irUrl               String?   @map("ir_url")
   irUrlBasis          String?   @map("ir_url_basis")
   registrar           String?
+  /// Where the registrar was read, e.g. "named on https://… (read 2026-11-02)".
+  registrarBasis      String?   @map("registrar_basis")
   registrarContactUrl String?   @map("registrar_contact_url")
   accessMethod        String    @default("UNKNOWN") @map("access_method")
   bulkAccess          String    @default("NOT_ATTEMPTED") @map("bulk_access")
