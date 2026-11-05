@@ -4,6 +4,8 @@
  *
  *   node dist/cli/reprocess-sources.js --manifest sources.json            dry run (report only)
  *   node dist/cli/reprocess-sources.js --manifest sources.json --apply    back up, then apply
+ *   node dist/cli/reprocess-sources.js --manifest sources.json --quarantine-only
+ *        back up, then only quarantine records no longer produced (imports nothing)
  *   node dist/cli/reprocess-sources.js --rollback <backup table>          undo an apply
  *
  * sources.json: [{ "company": "<slug>", "url": "https://…", "file": "local/path.pdf" }]
@@ -86,6 +88,9 @@ async function main() {
     options: {
       manifest: { type: "string" },
       apply: { type: "boolean", default: false },
+      // Back up, then only quarantine published records the re-read no longer
+      // produces. Imports nothing, so it adds no rows (for a database near its size limit).
+      "quarantine-only": { type: "boolean", default: false },
       "confirm-production": { type: "boolean", default: false },
       rollback: { type: "string" },
       json: { type: "boolean", default: false },
@@ -94,7 +99,10 @@ async function main() {
   const url = process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL;
   if (!url) throw new Error("Set DATABASE_URL.");
   const production = !isLocal(url);
-  if ((values.apply || values.rollback) && production && !values["confirm-production"])
+  const writes = values.apply || values["quarantine-only"];
+  if (values.apply && values["quarantine-only"])
+    throw new Error("Use either --apply or --quarantine-only, not both.");
+  if ((writes || values.rollback) && production && !values["confirm-production"])
     throw new Error(
       "This database is not local. Add --confirm-production only with approval for this change.",
     );
@@ -104,7 +112,7 @@ async function main() {
 
   const manifest = JSON.parse(await readFile(values.manifest, "utf8")) as ManifestEntry[];
   // A dry run's session is read-only at the server, so it cannot write even by mistake.
-  const sessionUrl = values.apply ? url : readOnlyUrl(url);
+  const sessionUrl = writes ? url : readOnlyUrl(url);
   const prisma = createPrismaClient(sessionUrl);
   const keys = keysFromEnv();
   const pool = new pg.Pool({ connectionString: sessionUrl, max: 2 });
@@ -167,13 +175,17 @@ async function main() {
 
     // 2. Compare with what is stored (read only).
     const { rows: existing } = await pool.query<{
+      id: string;
+      state: string;
+      review_status: string;
       company_id: string;
       folio_number_hash: string;
       investor_full_name: string;
       father_or_spouse_name: string | null;
       address_line: string | null;
     }>(
-      `SELECT company_id, folio_number_hash, investor_full_name, father_or_spouse_name,
+      `SELECT id::text AS id, state::text AS state, review_status::text AS review_status,
+              company_id, folio_number_hash, investor_full_name, father_or_spouse_name,
               address_line
          FROM unclaimed_folios WHERE company_id = ANY($1::uuid[])`,
       [companyIds],
@@ -218,20 +230,39 @@ async function main() {
     for (const k of stored.keys()) if (!plan.has(k)) diff.notRefound++;
 
     const report = {
-      mode: values.apply ? "apply" : "dry-run",
+      mode: values.apply ? "apply" : values["quarantine-only"] ? "quarantine-only" : "dry-run",
       database: production ? "non-local" : "local",
       parserVersion: PARSER_VERSION,
       files: perFile,
       diff,
     };
     console.log(values.json ? JSON.stringify(report, null, 2) : report);
-    if (!values.apply) {
+    if (!writes) {
       console.log("\nDry run: nothing was written. Re-run with --apply to back up and apply.");
       return;
     }
 
     // 3. Back up the affected columns, then apply through the normal importer.
     const backup = `backup_folios_${new Date().toISOString().replace(/\D/g, "").slice(0, 14)}`;
+    if (values["quarantine-only"]) {
+      await quarantineNotRefound(
+        pool,
+        backup,
+        companyIds,
+        existing.filter(
+          (e) =>
+            e.review_status === "PUBLISHED" &&
+            !plan.has(
+              key({
+                companyId: e.company_id,
+                folioNumberHash: e.folio_number_hash,
+                investorFullName: e.investor_full_name,
+              }),
+            ),
+        ),
+      );
+      return;
+    }
     await pool.query(
       `CREATE TABLE ${backup} AS SELECT ${BACKUP_COLUMNS.join(", ")}, now() AS backed_up_at
          FROM unclaimed_folios WHERE company_id = ANY($1::uuid[])`,
@@ -283,6 +314,54 @@ async function main() {
   } finally {
     await pool.end();
     await prisma.$disconnect();
+  }
+}
+
+/**
+ * --quarantine-only: backs up the affected columns of every record of the
+ * manifest's companies, then takes the published records the current reader no
+ * longer produces out of search (NOT_REFOUND, kept for review). Imports
+ * nothing. One transaction; undone with --rollback like an apply.
+ */
+async function quarantineNotRefound(
+  pool: pg.Pool,
+  backup: string,
+  companyIds: string[],
+  notRefound: { id: string; state: string }[],
+) {
+  const c = await pool.connect();
+  try {
+    await c.query("BEGIN");
+    await c.query(
+      `CREATE TABLE ${backup} AS SELECT ${BACKUP_COLUMNS.join(", ")}, now() AS backed_up_at
+         FROM unclaimed_folios WHERE company_id = ANY($1::uuid[])`,
+      [companyIds],
+    );
+    const { rows } = await c.query<{ n: string }>(`SELECT count(*) AS n FROM ${backup}`);
+    console.log(`Backed up ${rows[0]!.n} records to ${backup}.`);
+    let quarantined = 0;
+    for (let k = 0; k < notRefound.length; k += 5000) {
+      const batch = notRefound.slice(k, k + 5000);
+      const r = await c.query(
+        `UPDATE unclaimed_folios f
+            SET review_status = 'QUARANTINED', validation_status = 'QUARANTINED',
+                validation_issues = array_append(array_remove(f.validation_issues, 'NOT_REFOUND'), 'NOT_REFOUND'),
+                updated_at = now()
+           FROM unnest($1::uuid[], $2::text[]) AS x(id, state)
+          WHERE f.id = x.id AND f.state::text = x.state AND f.review_status = 'PUBLISHED'`,
+        [batch.map((b) => b.id), batch.map((b) => b.state)],
+      );
+      quarantined += r.rowCount ?? 0;
+    }
+    await c.query("COMMIT");
+    console.log(`${quarantined} records not produced again were quarantined for review.`);
+    console.log("Nothing was imported (quarantine-only).");
+    console.log(`Rollback: node dist/cli/reprocess-sources.js --rollback ${backup}`);
+  } catch (e) {
+    await c.query("ROLLBACK");
+    throw e;
+  } finally {
+    c.release();
   }
 }
 
