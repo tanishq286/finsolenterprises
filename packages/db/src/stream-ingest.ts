@@ -13,6 +13,7 @@ import {
 import pg from "pg";
 
 import { bulkUpsertFolios, type StagedFolio } from "./bulk-copy.js";
+import { linkSourceRows } from "./link-source-rows.js";
 import { folioColumns, folioSearchColumns } from "./columns.js";
 import { blindIndex, encryptField, type FieldKeys } from "./crypto.js";
 import type { PrismaClient } from "./generated/prisma/client.js";
@@ -564,15 +565,7 @@ export async function ingestStatementStream(
             quarantinedRows: tally.QUARANTINED,
           },
         });
-        // Hash join on the row key (see ingestStatement): unnest the record's row ids.
-        await db.$executeRaw`
-          UPDATE source_rows r SET folio_id = x.id, folio_state = x.state
-            FROM (SELECT f.id, f.state, unnest(f.source_row_ids) AS row_id
-                    FROM unclaimed_folios f
-                   WHERE f.source_document_id = ${documentId}::uuid) x
-           WHERE r.id = x.row_id
-             AND r.source_document_id = ${documentId}::uuid
-             AND r.folio_id IS NULL`;
+        await linkSourceRows(db, documentId);
         result.dividendEvents = {
           written: evTotals.written,
           amountTotal: Math.round(evTotals.amountTotal * 100) / 100,

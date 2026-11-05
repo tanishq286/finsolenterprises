@@ -18,6 +18,7 @@ import {
 import { blindIndex, encryptField, type FieldKeys } from "./crypto.js";
 import { folioColumns, folioSearchColumns } from "./columns.js";
 import { bulkUpsertFolios, type StagedFolio } from "./bulk-copy.js";
+import { linkSourceRows } from "./link-source-rows.js";
 import type { PrismaClient } from "./generated/prisma/client.js";
 import { PARSER_VERSION, readStatement, type RawTable } from "./statement-reader.js";
 
@@ -911,17 +912,7 @@ export async function ingestStatement(
       where: { id: sourceDocumentId },
       data: { status: "IMPORTED", statusDetail: null },
     });
-    // Link each source row to the holder record it fed (folio ids exist only after the merge).
-    // Unnesting the row ids makes this a hash join on the row key; `r.id = ANY(f.source_row_ids)`
-    // compared every row with every record (minutes for a 7,000-row statement).
-    await db.$executeRaw`
-      UPDATE source_rows r SET folio_id = x.id, folio_state = x.state
-      FROM (SELECT f.id, f.state, unnest(f.source_row_ids) AS row_id
-              FROM unclaimed_folios f
-             WHERE f.source_document_id = ${sourceDocumentId}::uuid) x
-      WHERE r.id = x.row_id
-        AND r.source_document_id = ${sourceDocumentId}::uuid
-        AND r.folio_id IS NULL`;
+    await linkSourceRows(db, sourceDocumentId);
   }
   const totals = accepted.reduce(
     (t, a) => ({ amount: t.amount + a.row.amountRupees, shares: t.shares + a.row.shares }),
