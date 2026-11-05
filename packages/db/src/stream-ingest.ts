@@ -564,13 +564,15 @@ export async function ingestStatementStream(
             quarantinedRows: tally.QUARANTINED,
           },
         });
+        // Hash join on the row key (see ingestStatement): unnest the record's row ids.
         await db.$executeRaw`
-          UPDATE source_rows r SET folio_id = f.id, folio_state = f.state
-            FROM unclaimed_folios f
-           WHERE r.source_document_id = ${documentId}::uuid
-             AND r.folio_id IS NULL
-             AND r.id = ANY (f.source_row_ids)
-             AND f.source_document_id = ${documentId}::uuid`;
+          UPDATE source_rows r SET folio_id = x.id, folio_state = x.state
+            FROM (SELECT f.id, f.state, unnest(f.source_row_ids) AS row_id
+                    FROM unclaimed_folios f
+                   WHERE f.source_document_id = ${documentId}::uuid) x
+           WHERE r.id = x.row_id
+             AND r.source_document_id = ${documentId}::uuid
+             AND r.folio_id IS NULL`;
         result.dividendEvents = {
           written: evTotals.written,
           amountTotal: Math.round(evTotals.amountTotal * 100) / 100,

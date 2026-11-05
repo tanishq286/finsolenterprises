@@ -80,6 +80,8 @@ export const HEADER_ALIASES: Record<Field, string[]> = {
     "Name of the Shareholder",
     "Name of Shareholder",
     "Name",
+    // Registrar export code (e.g. HPCL): first holder's name.
+    "NAM1",
   ],
   fatherFirst: ["Father/Husband First Name", "Father First Name"],
   fatherMiddle: ["Father/Husband Middle Name", "Father Middle Name"],
@@ -90,12 +92,22 @@ export const HEADER_ALIASES: Record<Field, string[]> = {
     "Father's Name",
     "Father/Husband's Name",
   ],
-  address: ["Address", "Investor Address", "Address of Investor"],
+  // ADD1: first address line of a registrar export (ADD2/ADD3 follow it).
+  address: ["Address", "Investor Address", "Address of Investor", "ADD1"],
   country: ["Country"],
   state: ["State", "State Name"],
   city: ["District", "City", "Town", "Location"],
   pincode: ["Pin Code", "PIN", "Pincode", "Postal Code"],
-  folio: ["Folio Number", "Folio No", "Folio", "Folio Numbers", "Ledger Folio", "Folio No."],
+  folio: [
+    "Folio Number",
+    "Folio No",
+    "Folio",
+    "Folio Numbers",
+    "Ledger Folio",
+    "Folio No.",
+    // Registrar export code (e.g. HPCL).
+    "FLNO",
+  ],
   dematId: [
     "DP Id-Client Id-Account Number",
     "DP Id-Client Id",
@@ -121,6 +133,9 @@ export const HEADER_ALIASES: Record<Field, string[]> = {
     "Dividend Amount",
     "Unclaimed Amount",
     "Amount to be transferred",
+    // Sum of the per-dividend columns in a registrar export (HPCL); a bare "Total" is not an amount.
+    "Total Amt",
+    "Total Amount",
   ],
   shares: [
     "Number of Shares",
@@ -184,7 +199,11 @@ function fieldOf(header: string): Field | undefined {
     n.startsWith("noofshares") ||
     n.startsWith("numberofunderlyingshares") ||
     n === "noof" ||
-    n === "numberof"
+    n === "numberof" ||
+    // HPCL: "Sum of Shares due for transfer to IEPF", "Shares to Trsf to IEPF". Not
+    // "Shares As on <date>", which is the current holding.
+    n.startsWith("sumofsharesdue") ||
+    /^sharesto(trsf|transfer)/.test(n)
   )
     return "shares";
   if (n.startsWith("investorfirstname")) return "first";
@@ -893,13 +912,16 @@ export async function ingestStatement(
       data: { status: "IMPORTED", statusDetail: null },
     });
     // Link each source row to the holder record it fed (folio ids exist only after the merge).
+    // Unnesting the row ids makes this a hash join on the row key; `r.id = ANY(f.source_row_ids)`
+    // compared every row with every record (minutes for a 7,000-row statement).
     await db.$executeRaw`
-      UPDATE source_rows r SET folio_id = f.id, folio_state = f.state
-      FROM unclaimed_folios f
-      WHERE r.source_document_id = ${sourceDocumentId}::uuid
-        AND r.folio_id IS NULL
-        AND r.id = ANY (f.source_row_ids)
-        AND f.source_document_id = ${sourceDocumentId}::uuid`;
+      UPDATE source_rows r SET folio_id = x.id, folio_state = x.state
+      FROM (SELECT f.id, f.state, unnest(f.source_row_ids) AS row_id
+              FROM unclaimed_folios f
+             WHERE f.source_document_id = ${sourceDocumentId}::uuid) x
+      WHERE r.id = x.row_id
+        AND r.source_document_id = ${sourceDocumentId}::uuid
+        AND r.folio_id IS NULL`;
   }
   const totals = accepted.reduce(
     (t, a) => ({ amount: t.amount + a.row.amountRupees, shares: t.shares + a.row.shares }),
