@@ -30,7 +30,8 @@ export type StatementFormat = "xlsx" | "xls" | "csv" | "pdf";
  * 2026.11.2: PDF text runs that span two cells are split, and column
  * boundaries come from the empty gutters between columns, not header centres.
  */
-export const PARSER_VERSION = "statement-reader/2026.11.3";
+// 2026.11.4: registrar export columns (FLNO, NAM1, ADD1, Total Amt, shares due/to transfer).
+export const PARSER_VERSION = "statement-reader/2026.11.4";
 
 export function formatOf(fileName: string, contentType?: string | null): StatementFormat | null {
   const ext = /\.([a-z0-9]+)(?:$|\?)/i.exec(fileName)?.[1]?.toLowerCase();

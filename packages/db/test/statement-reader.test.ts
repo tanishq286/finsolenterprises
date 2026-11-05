@@ -260,3 +260,28 @@ describe("November 2026: PIN printed in the folio column (columns shifted in the
     expect(r?.ok && r.value).toMatchObject({ folio: "100100", pincode: "560001" });
   });
 });
+
+describe("HPCL registrar exports", () => {
+  it("maps the IEPF-2 pivot: holder name, single-folio column and shares due", () => {
+    const { map } = mapHeaders([
+      "PAN",
+      "Name of the Shareholder",
+      "Count of Folio Number / DP Client ID No.",
+      "Folio No./Demat No. (Used only for single Folio cases)",
+      "Sum of Shares due for transfer to IEPF",
+      "Sum of Final Dividend 2017-18",
+    ]);
+    expect(map).toMatchObject({ fullName: 1, folio: 3, shares: 4 });
+    // PAN is never read.
+    expect(Object.values(map)).not.toContain(0);
+  });
+
+  it("maps FLNO / NAM1 / ADD1 codes, Total Amt and shares to transfer, not the current holding", () => {
+    const { map } = mapHeaders([
+      "SR NO", "FLNO", "NAM1", "ADD1", "ADD2", "ADD3", "CITY", "PIN", "Benpos_12062026", "PAN",
+      "Final 2018-19 (Amt)", "Total Amt", "Shares As on 31.03.2026", "Shares to Trsf to IEPF",
+      "PAN", "Folio Number / DP Client ID No.", "Name of the Shareholder",
+    ]);
+    expect(map).toMatchObject({ folio: 1, fullName: 2, address: 3, city: 6, pincode: 7, amount: 11, shares: 13 });
+  });
+});
