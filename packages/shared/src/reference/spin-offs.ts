@@ -54,6 +54,27 @@ export const SPIN_OFFS: SpinOff[] = [
     source: "ITC share entitlement ratio report and record-date announcement (December 2024)",
   },
   {
+    parent: "ARVIND",
+    recordDate: "2018-11-29",
+    childSymbol: "ARVINDFASN",
+    childName: "Arvind Fashions Limited",
+    ratioFrom: 5,
+    ratioTo: 1,
+    source:
+      "Arvind Limited notice to shareholders on the Composite Scheme sanctioned by NCLT Ahmedabad (order of 26 October 2018; shares allotted 4 December 2018); Business Standard, 28 November 2018",
+  },
+  {
+    parent: "ARVIND",
+    recordDate: "2018-11-29",
+    childSymbol: "ANUP",
+    childName: "The Anup Engineering Limited",
+    ratioFrom: 27,
+    ratioTo: 1,
+    source:
+      "Arvind Limited notice to shareholders on the Composite Scheme sanctioned by NCLT Ahmedabad (order of 26 October 2018; shares allotted 4 December 2018); Business Standard, 28 November 2018",
+    note: "Allotted as Anveshan Heavy Engineering Limited, which amalgamated The Anup Engineering Limited under the same scheme and took its name.",
+  },
+  {
     parent: "TMPV",
     recordDate: "2025-10-14",
     childSymbol: "TMCV",

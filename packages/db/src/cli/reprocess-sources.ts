@@ -7,7 +7,9 @@
  *   node dist/cli/reprocess-sources.js --rollback <backup table>          undo an apply
  *
  * sources.json: [{ "company": "<slug>", "url": "https://…", "file": "local/path.pdf" }]
- * (`file` is the downloaded copy; its SHA-256 is recorded with the URL.)
+ * (`file` is the downloaded copy; its SHA-256 is recorded with the URL.) Share
+ * lists (IEPF-4) also need "shareBasis": "TRANSFERRED_TO_IEPF" or
+ * "PROPOSED_IEPF_TRANSFER", as the acquisition worker records it.
  *
  * Rules:
  * - Reports aggregate counts only. Names, folio numbers and addresses are
@@ -40,6 +42,12 @@ interface ManifestEntry {
   /** ISO publication time if known (e.g. HTTP Last-Modified). */
   publishedAt?: string;
   publishedAtBasis?: "HTTP_LAST_MODIFIED" | "STATED_IN_DOCUMENT" | "UNKNOWN";
+  /**
+   * Share lists (IEPF-4) only: whether the listed shares were transferred to the
+   * IEPF or are only due for transfer. Required for share lists; the dry run
+   * stops before anything is backed up or written if one is missing.
+   */
+  shareBasis?: "PROPOSED_IEPF_TRANSFER" | "TRANSFERRED_TO_IEPF";
 }
 
 const BACKUP_COLUMNS = [
@@ -119,8 +127,17 @@ async function main() {
         prisma,
         keys,
         { buffer, fileName: m.file.split("/").pop()!, contentType: "application/pdf" },
-        { companyId: bySlug.get(m.company)!.id, dryRun: true, plan: true },
+        {
+          companyId: bySlug.get(m.company)!.id,
+          dryRun: true,
+          plan: true,
+          ...(m.shareBasis ? { shareBasis: m.shareBasis } : {}),
+        },
       );
+      if (r.form === "IEPF_4" && !m.shareBasis)
+        throw new Error(
+          `${m.file.split("/").pop()} is a share list: set "shareBasis" (PROPOSED_IEPF_TRANSFER or TRANSFERRED_TO_IEPF) on its manifest entry. Nothing was written.`,
+        );
       planned.push(...(r.planned ?? []));
       perFile.push({
         file: m.file.split("/").pop(),
@@ -235,6 +252,7 @@ async function main() {
         {
           companyId: bySlug.get(m.company)!.id,
           databaseUrl: url,
+          ...(m.shareBasis ? { shareBasis: m.shareBasis } : {}),
           source: {
             url: m.url,
             retrievedAt: new Date(m.retrievedAt ?? (await stat(m.file)).mtime),

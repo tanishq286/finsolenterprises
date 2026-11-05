@@ -155,3 +155,49 @@ describe("quick-try examples", () => {
     for (const e of POPULAR_EXAMPLES) expect(verifiedActionsFor(e.symbol)).not.toBeNull();
   });
 });
+
+describe("Arvind 2018 demergers (record date 29 November 2018)", () => {
+  // Arvind has no bonus or split on record, so the actions list is empty.
+  const arvind = (year: number, shares: number) =>
+    valueHolding(
+      {
+        symbol: "ARVIND",
+        exchange: "NSE",
+        name: "Arvind Limited",
+        purchaseYear: year,
+        originalShares: shares,
+        pricePerShare: 500,
+        priceIsManual: false,
+      },
+      [],
+      [],
+      true,
+      {
+        spinOffs: spinOffsFor("ARVIND"),
+        spinOffPrices: { ARVINDFASN: 400, ANUP: 2500 },
+        today: "2026-11-05",
+      },
+    );
+
+  it("1 Arvind Fashions per 5 and 1 Anup Engineering per 27 Arvind shares", () => {
+    const r = arvind(2010, 1000);
+    expect(r.currentShares).toBe(1000);
+    expect(r.spinOffs).toEqual([
+      expect.objectContaining({ symbol: "ARVINDFASN", shares: 200, marketValuePaise: 200 * 400 * 100 }),
+      expect.objectContaining({ symbol: "ANUP", shares: 37, marketValuePaise: 37 * 2500 * 100 }),
+    ]);
+    expect(r.totalPaise).toBe(1000 * 500 * 100 + 200 * 400 * 100 + 37 * 2500 * 100);
+  });
+
+  it("leaves out fractional entitlements, which the company paid in cash", () => {
+    const r = arvind(2010, 100);
+    expect(r.spinOffs.map((s) => [s.symbol, s.shares])).toEqual([
+      ["ARVINDFASN", 20],
+      ["ANUP", 3],
+    ]);
+  });
+
+  it("gives nothing for shares bought after the record date", () => {
+    expect(arvind(2019, 100).spinOffs).toEqual([]);
+  });
+});
