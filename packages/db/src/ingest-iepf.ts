@@ -171,7 +171,14 @@ function fieldOf(header: string): Field | undefined {
     n.startsWith("actualdateoftransfer")
   )
     return "eventDate";
-  if (n.startsWith("amount")) return "amount";
+  if (n.startsWith("amount") || n.startsWith("dividendamount") || n.startsWith("unclaimedamount"))
+    return "amount";
+  // "Father / Husband Name (First / Middle / Last)", including the "Husbank" misprint.
+  if (
+    /^(father|husband|husbank|spouse)/.test(n) &&
+    !/first|middle|last/.test(n.replace(/firstmiddlelast$/, ""))
+  )
+    return "fatherFull";
   if (
     n.startsWith("numberofshares") ||
     n.startsWith("noofshares") ||
@@ -344,11 +351,33 @@ export function parseRow(
 
   let folio = (get("folio") || get("dematId")).replace(/\s+/g, "");
   folio = folio.replace(/^(?:idandclientid|clientid|foliono\.?)/i, "");
+  // Columns shifted one place in the source: the statement has a PIN column
+  // but it is empty, and the folio cell starts with a valid PIN, followed by
+  // the real folio or alone with the holder's demat account beside it.
+  let shiftedPin: string | null = null;
+  if (map.pincode !== undefined && !get("pincode").replace(/\D/g, "")) {
+    const m = /^([1-9]\d{5})(\D[A-Za-z0-9/-]*)?$/.exec(folio);
+    const demat = get("dematId").replace(/\s+/g, "");
+    if (m && stateFromPincode(m[1]!) && (m[2] || (demat && demat !== folio))) {
+      shiftedPin = m[1]!;
+      folio = m[2] ?? demat;
+    }
+  }
   if (!folio || folio === "-" || /^n\/?a$/i.test(folio))
     return fail("No folio number or demat account.");
+  // NSDL (IN + 14) and CDSL (16 digits from a 120/130 DP ID) accounts are 16
+  // characters. A shorter one was cut off in the source and could belong to
+  // anyone with the same depository participant, so it is never merged on.
+  if (/^IN3\d{4,12}$/i.test(folio) || /^1[23]0\d{7,12}$/.test(folio))
+    return fail("Demat account number is cut off in the source.", ["FOLIO_INCOMPLETE"]);
 
   const country = get("country");
-  const pinDigits = get("pincode").replace(/\D/g, "");
+  // With no PIN column, a PIN printed at the end of the address is used.
+  const pinDigits = shiftedPin
+    ? shiftedPin
+    : map.pincode !== undefined
+      ? get("pincode").replace(/\D/g, "")
+      : (/(?:^|\D)([1-9]\d{2}\s?\d{3})\s*$/.exec(get("address"))?.[1] ?? "").replace(/\s/g, "");
   const stateText = get("state");
   // An Indian state as written wins (PDF country cells carry address spill-over,
   // e.g. "DHARMPUR INDIA"); then a clearly foreign country; then the PIN's state;
@@ -399,6 +428,8 @@ export function parseRow(
   issues.push(...relative.issues);
   if (notes.includes("WRAPPED_NAME")) issues.push("WRAPPED_NAME");
   if (notes.includes("MERGED_FRAGMENT")) issues.push("MERGED_FRAGMENT");
+  if (notes.includes("NAME_CONTINUED")) issues.push("NAME_CONTINUED");
+  if (shiftedPin) issues.push("PIN_IN_FOLIO");
   if (/\d/.test([first, middle, last].join(""))) issues.push("NAME_SUSPECT");
   if (!get("address")) issues.push("ADDRESS_MISSING");
   if (pinDigits.length !== 6) issues.push("PIN_MISSING");

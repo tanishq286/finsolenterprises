@@ -16,6 +16,7 @@ import {
 import { ENV, type Env } from "../config/env.js";
 import { PrismaService } from "../common/prisma.service.js";
 import { num } from "../common/serialize.js";
+import { symbolsForAlias } from "./equity-aliases.js";
 import { MARKET_USER_AGENT, YahooChartProvider } from "./quote-providers.js";
 
 export interface EquityListing {
@@ -189,17 +190,34 @@ export class EquitiesService implements OnApplicationBootstrap {
     return rows;
   }
 
+  /** Listings a nickname ("SBI", "HUL", "L&T") stands for, in the alias's order. */
+  private async fromAliases(q: string): Promise<EquityListing[]> {
+    const symbols = symbolsForAlias(q);
+    if (!symbols.length) return [];
+    const rows = this.size
+      ? await this.prisma.client.$queryRaw<EquityListing[]>`
+          SELECT symbol, name, exchange, isin FROM listed_equities
+          WHERE exchange = 'NSE' AND symbol = ANY(${[...symbols]})`
+      : this.known().filter((e) => symbols.includes(e.symbol));
+    return symbols.flatMap((s) => rows.filter((r) => r.symbol === s).slice(0, 1));
+  }
+
   async search(q: string, limit = 12): Promise<EquityListing[]> {
     if (this.online && Date.now() - this.loadedAt > DAY_MS) await this.loadNse();
     const needle = q.trim().toUpperCase();
     const local = await this.fromDirectory(needle, limit);
-    const scored =
+    const matched =
       local ??
       this.known()
         .filter(
           (e) => !needle || e.symbol.includes(needle) || e.name.toUpperCase().includes(needle),
         )
         .slice(0, limit);
+    const aliased = await this.fromAliases(q);
+    const scored = [
+      ...aliased,
+      ...matched.filter((m) => !aliased.some((a) => a.symbol === m.symbol)),
+    ].slice(0, limit);
     if (scored.length >= limit || !this.online || !needle) return scored.slice(0, limit);
     // BSE-only listings: ask Yahoo Finance's search.
     try {

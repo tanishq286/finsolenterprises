@@ -198,11 +198,18 @@ function CompanyPicker({
   onSelect: (l: Listing) => void;
 }) {
   const [q, setQ] = React.useState(selected?.name ?? "");
-  const [results, setResults] = React.useState<Listing[]>([]);
+  const [found, setFound] = React.useState<{ q: string; results: Listing[] }>({
+    q: "",
+    results: [],
+  });
   const [size, setSize] = React.useState<number | null>(null);
   const [open, setOpen] = React.useState(false);
   const [active, setActive] = React.useState(0);
+  /** Enter pressed before the results for what was typed arrived: pick the top one when they do. */
+  const pickWhenReady = React.useRef(false);
   const listId = React.useId();
+  // Only results for the text in the box are shown or picked, never an earlier query's.
+  const results = found.q === q ? found.results : [];
 
   // Keep the box in step when a quick-try pill picks a company.
   const [lastSelected, setLastSelected] = React.useState(selected);
@@ -211,27 +218,40 @@ function CompanyPicker({
     setQ(selected?.name ?? "");
   }
 
+  const choose = (l: Listing) => {
+    pickWhenReady.current = false;
+    onSelect(l);
+    setQ(l.name);
+    setOpen(false);
+  };
+  // The parent passes a new onSelect each render; the lookup effect reads the latest one.
+  const chooseRef = React.useRef(choose);
+  React.useEffect(() => {
+    chooseRef.current = choose;
+  });
+
   React.useEffect(() => {
     if (!open) return;
+    // A slower answer for an older query must not replace the current one.
+    let current = true;
     const t = setTimeout(() => {
       callApi<{ directorySize: number; results: Listing[] }>(
         `market/equities?q=${encodeURIComponent(q)}`,
       )
         .then((r) => {
-          setResults(r.results);
+          if (!current) return;
+          setFound({ q, results: r.results });
           setSize(r.directorySize);
           setActive(0);
+          if (pickWhenReady.current && r.results[0]) chooseRef.current(r.results[0]);
         })
-        .catch(() => setResults([]));
+        .catch(() => current && setFound({ q, results: [] }));
     }, 180);
-    return () => clearTimeout(t);
+    return () => {
+      current = false;
+      clearTimeout(t);
+    };
   }, [q, open]);
-
-  const choose = (l: Listing) => {
-    onSelect(l);
-    setQ(l.name);
-    setOpen(false);
-  };
 
   return (
     <div className="relative">
@@ -251,6 +271,7 @@ function CompanyPicker({
         onFocus={() => setOpen(true)}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
         onChange={(e) => {
+          pickWhenReady.current = false;
           setQ(e.target.value);
           setOpen(true);
         }}
@@ -264,7 +285,15 @@ function CompanyPicker({
           } else if (e.key === "Enter" && open && results[active]) {
             e.preventDefault();
             choose(results[active]!);
-          } else if (e.key === "Escape") setOpen(false);
+          } else if (e.key === "Enter" && q.trim() && found.q !== q) {
+            // Still looking up what was typed: pick its top match when it arrives.
+            e.preventDefault();
+            pickWhenReady.current = true;
+            setOpen(true);
+          } else if (e.key === "Escape") {
+            pickWhenReady.current = false;
+            setOpen(false);
+          }
         }}
       />
       {size !== null && (

@@ -25,6 +25,15 @@ export const ISSUE_SEVERITY = {
   WRAPPED_NAME: "QUARANTINED",
   /** Text from a separate line group was joined to this row. */
   MERGED_FRAGMENT: "WARNING",
+  /**
+   * The name continued on the next line of a folio-led table (each holder's
+   * first line carries its folio and amount, so the line can only be theirs).
+   */
+  NAME_CONTINUED: "WARNING",
+  /** The PIN code sat in the folio cell (columns shifted in the source); it was moved to the PIN. */
+  PIN_IN_FOLIO: "WARNING",
+  /** A demat account number shorter than 16 characters: the source cut it off. */
+  FOLIO_INCOMPLETE: "QUARANTINED",
   /** The investor name contains digits. */
   NAME_SUSPECT: "QUARANTINED",
   /** No six-digit PIN code. */
@@ -53,6 +62,9 @@ export const ISSUE_LABELS: Record<IssueCode, string> = {
   RELATIVE_SUSPECT: "Father/spouse name may contain address text",
   WRAPPED_NAME: "Holder name wrapped across lines in source",
   MERGED_FRAGMENT: "Fragment joined from a separate line",
+  NAME_CONTINUED: "Name continued on the next line in source",
+  FOLIO_INCOMPLETE: "Demat account number cut off in source",
+  PIN_IN_FOLIO: "PIN code was printed in the folio column",
   NAME_SUSPECT: "Holder name contains digits",
   PIN_MISSING: "No PIN code",
   ADDRESS_MISSING: "No address",
