@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { callApi } from "@/lib/api/client";
+import { normalizePan, PAN_FORMAT_MESSAGE, PAN_PATTERN } from "@finsol/shared";
 
 export function DeeperTrace({
   holderName,
@@ -34,6 +35,7 @@ export function DeeperTrace({
   const [years, setYears] = useState("");
   const [oldAddress, setOldAddress] = useState("");
   const [oldCity, setOldCity] = useState("");
+  const [holderPan, setHolderPan] = useState("");
   const [certificateStatus, setCertificateStatus] = useState<
     "UNKNOWN" | "AVAILABLE" | "LOST" | "PARTIAL"
   >("UNKNOWN");
@@ -97,6 +99,7 @@ export function DeeperTrace({
             certificateStatus,
             companies: companies || undefined,
             years: years || undefined,
+            holderPan: normalizePan(holderPan) || undefined,
             consent: true,
           },
         },
@@ -285,6 +288,27 @@ export function DeeperTrace({
               </div>
 
               <div>
+                <label htmlFor="trace-pan" className="block text-sm font-medium text-fg mb-1">
+                  Shareholder PAN (Optional)
+                </label>
+                <Input
+                  id="trace-pan"
+                  value={holderPan}
+                  onChange={(e) => setHolderPan(e.target.value.toUpperCase())}
+                  placeholder="e.g. ABCDE1234F"
+                  maxLength={10}
+                  autoComplete="off"
+                  autoCapitalize="characters"
+                  spellCheck={false}
+                  aria-describedby="trace-pan-help"
+                />
+                <p id="trace-pan-help" className="mt-1 text-xs text-fg-3">
+                  Encrypted when saved. Only Finsol&apos;s verification team can see it, and uses it
+                  to confirm the shareholder&apos;s identity.
+                </p>
+              </div>
+
+              <div>
                 <label
                   htmlFor="trace-certificates"
                   className="block text-sm font-medium text-fg mb-1"
@@ -312,6 +336,11 @@ export function DeeperTrace({
                   onClick={() => {
                     if (!investorName.trim()) {
                       setError("Please provide the investor full name.");
+                      return;
+                    }
+                    const pan = normalizePan(holderPan);
+                    if (pan && !PAN_PATTERN.test(pan)) {
+                      setError(PAN_FORMAT_MESSAGE);
                       return;
                     }
                     setError("");

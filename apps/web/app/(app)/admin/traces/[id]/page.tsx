@@ -7,6 +7,8 @@ interface Trace {
   reference: string;
   status: string;
   holderName: string;
+  /** Decrypted for staff only; null when none was given. */
+  holderPan: string | null;
   scope: string;
   details: {
     relationship: string;
@@ -42,6 +44,8 @@ export default async function TraceDetail({ params }: { params: Promise<{ id: st
         {data.holderName} · {data.scope.replaceAll("_", " ")}
       </p>
       <dl className="my-5 grid gap-2">
+        <dt>Shareholder PAN</dt>
+        <dd className="font-mono">{data.holderPan ?? "Not given"}</dd>
         <dt>Relationship</dt>
         <dd>{data.details?.relationship ?? "Not specified"}</dd>
         <dt>Claimant Contact</dt>

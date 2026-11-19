@@ -1,6 +1,6 @@
 import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query, Req } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
-import { ALL_INDIA, INDIAN_STATES } from "@finsol/shared";
+import { ALL_INDIA, INDIAN_STATES, PAN_FORMAT_MESSAGE, PAN_PATTERN } from "@finsol/shared";
 import { z } from "zod";
 import {
   clientIp,
@@ -24,6 +24,13 @@ export const traceSchema = z
     certificateStatus: z.enum(["AVAILABLE", "LOST", "PARTIAL", "UNKNOWN"]).optional(),
     companies: z.string().trim().max(500).optional(),
     years: z.string().trim().max(100).optional(),
+    /** Optional; stored encrypted and shown only to staff. The message never repeats the input. */
+    holderPan: z
+      .string()
+      .trim()
+      .toUpperCase()
+      .refine((v) => v === "" || PAN_PATTERN.test(v), { error: PAN_FORMAT_MESSAGE })
+      .optional(),
     consent: z.literal(true),
   })
   .strict();
