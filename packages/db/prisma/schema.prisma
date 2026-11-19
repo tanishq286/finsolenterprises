@@ -855,3 +855,18 @@ model TraceCheck {
   @@index([traceId, checkedAt], map: "trace_checks_trace_idx")
   @@map("trace_checks")
 }
+
+/// Zero-result searches (migrations/20261120000000_search_demand_log). No names or folios: see the migration.
+model SearchDemandLog {
+  id           BigInt       @id @default(autoincrement())
+  searchMode   String       @map("search_mode")
+  companyQuery String?      @map("company_query")
+  companyKnown Boolean      @default(false) @map("company_known")
+  state        IndianState?
+  nameHash     Bytes        @map("name_hash")
+  resultCount  Int          @default(0) @map("result_count") @db.SmallInt
+  createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([createdAt], map: "search_demand_log_created_brin", type: Brin)
+  @@map("search_demand_log")
+}
