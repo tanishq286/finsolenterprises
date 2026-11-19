@@ -1,9 +1,12 @@
 import { BadRequestException, HttpException, HttpStatus, Inject, Injectable } from "@nestjs/common";
-import { decryptField, type Prisma } from "@finsol/db";
+import { blindIndex, decryptField, type Prisma } from "@finsol/db";
 import type { CustodyStatus, FolioState } from "@finsol/shared";
 import type pg from "pg";
 import {
+  ALL_INDIA,
   countsShareValue,
+  folioVariants,
+  normalizeCompanyQuery,
   holdingValuePaise,
   maskCompanyName,
   maskPincode,
@@ -13,6 +16,8 @@ import {
   VALUATION_BASIS,
   type ClaimRequestBody,
   type ClaimResponse,
+  type FolioSearchInput,
+  type FolioSearchResponse,
   type ResultAccess,
   type SearchCoverage,
   type SearchInput,
@@ -28,6 +33,7 @@ import { JobQueueService } from "../../common/queue/job-queue.service.js";
 import { num } from "../../common/serialize.js";
 import { competingClaims, isContested, lockFolios } from "../../common/claims.js";
 import { LiveMcaSyncService } from "./live-mca-sync.service.js";
+import { SearchDemandService } from "./search-demand.service.js";
 import { SEARCH_ENGINE, SEARCH_POOL } from "./search.tokens.js";
 import type { SearchEngine, SearchHit } from "./search-engine.js";
 
@@ -83,6 +89,26 @@ export const RESULTS_BY_ID = {
   name: "search_results_by_id_v2",
   text: `SELECT ${RESULT_COLUMNS} WHERE f.id = ANY($1::uuid[]) AND ${PUBLISHED}`,
 };
+/** Exact company + folio: served by each partition's (company_id, folio_number_hash) index. */
+export const RESULTS_BY_FOLIO = {
+  name: "search_results_by_folio_v1",
+  text: `SELECT ${RESULT_COLUMNS} WHERE f.company_id = ANY($1::uuid[]) AND f.folio_number_hash = ANY($2::text[]) AND ${PUBLISHED} LIMIT ${RESULT_LIMIT}`,
+};
+export const RESULTS_BY_FOLIO_IN_STATE = {
+  name: "search_results_by_folio_state_v1",
+  text: `SELECT ${RESULT_COLUMNS} WHERE f.state = $3::"IndianState" AND f.company_id = ANY($1::uuid[]) AND f.folio_number_hash = ANY($2::text[]) AND ${PUBLISHED} LIMIT ${RESULT_LIMIT}`,
+};
+/** Shorter queries would match most company names. */
+const MIN_COMPANY_QUERY = 3;
+const MAX_COMPANY_MATCHES = 5;
+
+interface CompanyMatchEntry {
+  id: string;
+  /** Normalized names and aliases, matched by substring. */
+  names: string[];
+  /** Normalized slug, NSE ticker and ISINs, matched exactly. */
+  codes: string[];
+}
 
 const COVERAGE_TTL_MS = 10 * 60_000;
 
@@ -112,6 +138,12 @@ export function estimateValuePaise(f: FolioWithCompany): number {
   );
 }
 
+/** The tier comes only from the verified session token, never from the request. */
+function accessOf(user: SessionClaims | null): ResultAccess {
+  if (!user) return "public";
+  return (STAFF_ROLES as readonly string[]).includes(user.role) ? "staff" : "member";
+}
+
 @Injectable()
 export class SearchService {
   constructor(
@@ -122,6 +154,7 @@ export class SearchService {
     @Inject(SEARCH_ENGINE) private readonly engine: SearchEngine,
     @Inject(SEARCH_POOL) private readonly pool: pg.Pool,
     @Inject(ENV) private readonly env: Env,
+    private readonly demand: SearchDemandService,
   ) {}
 
   private coverageCache: { at: number; value: SearchCoverage } | null = null;
@@ -268,26 +301,8 @@ export class SearchService {
       ? resolveSearch({ fullName: input.jointHolderName, state: input.state })
       : null;
     const user = viewer.user ?? null;
-    const access: ResultAccess = !user
-      ? "public"
-      : (STAFF_ROLES as readonly string[]).includes(user.role)
-        ? "staff"
-        : "member";
-
-    if (access === "member") {
-      const today = await this.prisma.client.auditEvent.count({
-        where: {
-          actorId: user!.sub,
-          action: "search.member",
-          createdAt: { gte: new Date(Date.now() - 86_400_000) },
-        },
-      });
-      if (today >= this.env.MEMBER_SEARCHES_PER_DAY)
-        throw new HttpException(
-          "You have run the most checks allowed today. Your analyst will continue from here.",
-          HttpStatus.TOO_MANY_REQUESTS,
-        );
-    }
+    const access = accessOf(user);
+    if (access === "member") await this.enforceMemberLimit(user!);
 
     // One more than the limit, to know whether the list was cut short. A single
     // typed word is searched as surname, first and middle name.
@@ -334,6 +349,15 @@ export class SearchService {
       primaryHits.length > RESULT_LIMIT ||
       jointHits.length > RESULT_LIMIT;
     const results = all.slice(0, RESULT_LIMIT);
+    if (results.length === 0)
+      await this.demand.record({
+        mode: "name",
+        companyQuery: null,
+        companyKnown: false,
+        state: q.state === ALL_INDIA ? null : q.state,
+        material: `name|${q.first}|${q.middle}|${q.last}|${q.state}`,
+        resultCount: 0,
+      });
     if (access === "member")
       await this.audit.record({
         actorId: user!.sub,
@@ -365,6 +389,128 @@ export class SearchService {
       tookMs: Math.round(performance.now() - started),
       liveRefreshId: this.live.trigger(q.state),
     };
+  }
+
+  /** Members get a limited number of checks a day, name and folio lookups together. */
+  private async enforceMemberLimit(user: SessionClaims): Promise<void> {
+    const today = await this.prisma.client.auditEvent.count({
+      where: {
+        actorId: user.sub,
+        action: "search.member",
+        createdAt: { gte: new Date(Date.now() - 86_400_000) },
+      },
+    });
+    if (today >= this.env.MEMBER_SEARCHES_PER_DAY)
+      throw new HttpException(
+        "You have run the most checks allowed today. Your analyst will continue from here.",
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+  }
+
+  private companyCache: { at: number; value: CompanyMatchEntry[] } | null = null;
+
+  /** Every company with its names, aliases and codes, normalized; cached like coverage. */
+  private async companyIndex(): Promise<CompanyMatchEntry[]> {
+    if (this.companyCache && Date.now() - this.companyCache.at < COVERAGE_TTL_MS)
+      return this.companyCache.value;
+    const db = this.prisma.client;
+    const [companies, registers] = await Promise.all([
+      db.company.findMany({
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          tickerNse: true,
+          isin: true,
+          legacyIsins: true,
+        },
+      }),
+      db.sourceRegister.findMany({
+        where: { companyId: { not: null } },
+        select: { companyId: true, name: true, aliases: true },
+      }),
+    ]);
+    const value = companies.map((c) => {
+      const extra = registers.filter((r) => r.companyId === c.id);
+      const names = [c.name, ...extra.flatMap((r) => [r.name, ...r.aliases])]
+        .map(normalizeCompanyQuery)
+        .filter(Boolean);
+      const codes = [c.slug.replace(/-/g, " "), c.tickerNse, c.isin, ...c.legacyIsins]
+        .filter((x): x is string => !!x)
+        .map(normalizeCompanyQuery);
+      return { id: c.id, names: [...new Set(names)], codes };
+    });
+    this.companyCache = { at: Date.now(), value };
+    return value;
+  }
+
+  private async matchCompanies(companyQuery: string): Promise<string[]> {
+    const index = await this.companyIndex();
+    return index
+      .filter(
+        (c) => c.codes.includes(companyQuery) || c.names.some((n) => n.includes(companyQuery)),
+      )
+      .slice(0, MAX_COMPANY_MATCHES)
+      .map((c) => c.id);
+  }
+
+  /**
+   * Company + folio lookup, an exact match on the folio as printed. The public
+   * learns only whether a record exists; members and staff get the same rows,
+   * masked the same way, as the name search.
+   */
+  async searchByFolio(
+    input: FolioSearchInput,
+    viewer: { user?: SessionClaims | null; ip?: string | null },
+  ): Promise<FolioSearchResponse> {
+    const companyQuery = normalizeCompanyQuery(input.company);
+    if (companyQuery.length < MIN_COMPANY_QUERY)
+      throw new BadRequestException("Enter the company name as it appears on the certificate.");
+    const variants = folioVariants(input.folio);
+    if (!variants.length) throw new BadRequestException("Enter the folio number.");
+    const user = viewer.user ?? null;
+    const access = accessOf(user);
+    if (access === "member") await this.enforceMemberLimit(user!);
+
+    const companyIds = await this.matchCompanies(companyQuery);
+    const hashes = variants.map((v) => blindIndex(v, this.prisma.fieldKeys));
+    const rows = companyIds.length
+      ? (
+          await this.pool.query<ResultRow>(
+            input.state
+              ? { ...RESULTS_BY_FOLIO_IN_STATE, values: [companyIds, hashes, input.state] }
+              : { ...RESULTS_BY_FOLIO, values: [companyIds, hashes] },
+          )
+        ).rows
+      : [];
+    const companyMatched = companyIds.length > 0;
+    if (rows.length === 0)
+      await this.demand.record({
+        mode: "company_folio",
+        companyQuery,
+        companyKnown: companyMatched,
+        state: input.state ?? null,
+        material: `folio|${companyQuery}|${variants[variants.length - 1]!.replace(/\s+/g, "").toUpperCase()}`,
+        resultCount: 0,
+      });
+    if (access === "public")
+      return { mode: "COMPANY_FOLIO", access, companyMatched, found: rows.length };
+
+    const released = access === "member" ? await this.releasedFor(user!.sub) : new Set<string>();
+    const results = rows.map((f) =>
+      this.item(f, { id: f.id, score: 1, matchedBy: "exact" }, access, released, "primary", "FULL"),
+    );
+    if (access === "member")
+      await this.audit.record({
+        actorId: user!.sub,
+        actorRole: user!.role,
+        action: "search.member",
+        entityType: "search",
+        entityId: null,
+        data: { mode: "company_folio", state: input.state ?? null, matches: results.length },
+        ip: viewer.ip ?? null,
+      });
+    return { mode: "COMPANY_FOLIO", access, companyMatched, found: results.length, results };
   }
 
   /** A signed-in member asks Finsol to take up the holdings they picked. */

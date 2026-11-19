@@ -6,7 +6,12 @@ import { ENV, type Env } from "../config/env.js";
 import type pg from "pg";
 
 import { SEARCH_ENGINE, SEARCH_POOL } from "../modules/search/search.tokens.js";
-import { RESULTS_BY_ID, RESULTS_BY_STATE } from "../modules/search/search.service.js";
+import {
+  RESULTS_BY_FOLIO,
+  RESULTS_BY_FOLIO_IN_STATE,
+  RESULTS_BY_ID,
+  RESULTS_BY_STATE,
+} from "../modules/search/search.service.js";
 import type { SearchEngine } from "../modules/search/search-engine.js";
 import { PrismaService } from "./prisma.service.js";
 
@@ -81,6 +86,8 @@ export class PrewarmService implements OnApplicationBootstrap {
         try {
           await c.query({ ...RESULTS_BY_STATE, values: [[], ["MAHARASHTRA"]] });
           await c.query({ ...RESULTS_BY_ID, values: [[]] });
+          await c.query({ ...RESULTS_BY_FOLIO, values: [[], []] });
+          await c.query({ ...RESULTS_BY_FOLIO_IN_STATE, values: [[], [], "MAHARASHTRA"] });
         } finally {
           c.release();
         }

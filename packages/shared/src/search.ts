@@ -222,3 +222,70 @@ export const VALUATION_BASIS =
 /** Said under every search, matched or not. */
 export const COVERAGE_DISCLAIMER =
   "These records come only from the statements we have imported. No match here does not mean there are no unclaimed holdings: many companies and years are not covered yet. A match is a lead to verify, not proof of ownership.";
+
+/** Company + folio lookup: an exact match on the folio number printed on the certificate. */
+export interface FolioSearchInput {
+  company: string;
+  folio: string;
+  state?: IndianState;
+}
+
+/**
+ * The public learns only whether a record exists; who it belongs to stays
+ * hidden until they sign in, so walking folio numbers reveals no holders.
+ */
+export interface FolioSearchPresence {
+  mode: "COMPANY_FOLIO";
+  access: "public";
+  companyMatched: boolean;
+  found: number;
+}
+
+export interface FolioSearchResults {
+  mode: "COMPANY_FOLIO";
+  access: "member" | "staff";
+  companyMatched: boolean;
+  found: number;
+  results: SearchResultItem[];
+}
+
+export type FolioSearchResponse = FolioSearchPresence | FolioSearchResults;
+
+const COMPANY_NOISE = new Set(["limited", "ltd", "the", "pvt", "private", "inc"]);
+export const COMPANY_QUERY_MAX = 80;
+
+/** "The Reliance Industries Ltd." -> "reliance industries": for matching and demand counts. */
+export function normalizeCompanyQuery(raw: string): string {
+  return raw
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .split(" ")
+    .filter((w) => w && !COMPANY_NOISE.has(w))
+    .join(" ")
+    .slice(0, COMPANY_QUERY_MAX)
+    .trim();
+}
+
+/**
+ * The spellings of a typed folio worth an exact lookup: as typed, and without
+ * separators. Case and spaces are folded later by the keyed hash itself.
+ */
+export function folioVariants(raw: string): string[] {
+  const typed = raw.trim();
+  const bare = typed.replace(/[-/._]/g, "");
+  return [...new Set([typed, bare].filter((v) => v.replace(/\s+/g, "").length > 0))];
+}
+
+/** Staff view of zero-result searches: what people looked for that we could not find. */
+export interface SearchDemandReport {
+  days: number;
+  since: string;
+  zeroResultSearches: number;
+  /** Folio lookups for companies not in our records, most asked first. */
+  uncoveredCompanies: { companyQuery: string; searches: number; searchers: number }[];
+  /** Folio lookups for companies we cover, where the folio was not in our records. */
+  coveredCompaniesMissingFolio: { companyQuery: string; searches: number; searchers: number }[];
+  /** Zero-result searches by state; null is All India. */
+  byState: { state: IndianState | null; searches: number; searchers: number }[];
+}

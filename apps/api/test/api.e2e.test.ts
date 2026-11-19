@@ -203,6 +203,228 @@ describe("GET /search/unclaimed: the 3-Minute Check", () => {
   });
 });
 
+describe("GET /search/folio: company + folio lookup", () => {
+  const folio = (query: Record<string, string>) =>
+    request(http).get("/api/v1/search/folio").query(query);
+
+  it("tells the public only that a record exists, never whose it is", async () => {
+    const res = await folio({ company: "Reliance Industries Ltd", folio: "RIL0012345621" }).expect(
+      200,
+    );
+    expect(Object.keys(res.body).sort()).toEqual(["access", "companyMatched", "found", "mode"]);
+    expect(res.body).toMatchObject({
+      mode: "COMPANY_FOLIO",
+      access: "public",
+      companyMatched: true,
+    });
+    expect(res.body.found).toBeGreaterThanOrEqual(1);
+    const body = JSON.stringify(res.body);
+    for (const secret of ["Ramesh", "Agarwal", "New Delhi", "110", "RIL***21"])
+      expect(body).not.toContain(secret);
+  });
+
+  it("ignores tier flags sent by the caller", async () => {
+    const res = await folio({
+      company: "Reliance Industries",
+      folio: "RIL0012345621",
+      isAuthenticated: "true",
+      role: "SUPER_ADMIN",
+      access: "staff",
+    }).expect(200);
+    expect(res.body.access).toBe("public");
+    expect(res.body.results).toBeUndefined();
+  });
+
+  it("folds case, spaces and separators in the typed folio", async () => {
+    for (const typed of ["ril 0012 345621", "RIL-0012-345621", "  RIL0012345621  "]) {
+      const res = await folio({ company: "reliance industries", folio: typed }).expect(200);
+      expect(res.body.found, typed).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it("narrows to a state when one is given", async () => {
+    const delhi = await folio({ company: "Reliance", folio: "RIL0012345621", state: "DELHI" });
+    expect(delhi.body.found).toBeGreaterThanOrEqual(1);
+    const kerala = await folio({ company: "Reliance", folio: "RIL0012345621", state: "KERALA" });
+    expect(kerala.body.found).toBe(0);
+  });
+
+  it("gives members the tiered rows with the folio still masked", async () => {
+    const res = await folio({ company: "Reliance Industries", folio: "RIL0012345621" })
+      .set(auth("venkatesh"))
+      .expect(200);
+    expect(res.body).toMatchObject({ access: "member", companyMatched: true });
+    expect(res.body.results[0]).toMatchObject({
+      access: "member",
+      investorFullName: "Ramesh Kumar Agarwal",
+      companyName: "Reliance Industries Limited",
+      folioNumber: "RIL***21",
+      folioReleased: false,
+      matchClass: "exact",
+    });
+    expect(JSON.stringify(res.body)).not.toContain("RIL0012345621");
+  });
+
+  it("gives staff the full folio", async () => {
+    const res = await folio({ company: "Reliance Industries", folio: "RIL0012345621" })
+      .set(auth("analyst"))
+      .expect(200);
+    expect(res.body.results[0]).toMatchObject({
+      access: "staff",
+      folioNumber: "RIL0012345621",
+      folioReleased: true,
+    });
+  });
+
+  it("rejects a missing company, a too-short company and a malformed folio", async () => {
+    await folio({ folio: "RIL0012345621" }).expect(400);
+    await folio({ company: "Re", folio: "RIL0012345621" }).expect(400);
+    await folio({ company: "Reliance", folio: "RIL'; DROP TABLE x;--" }).expect(400);
+    await folio({ company: "Reliance", folio: "RIL0012345621", state: "ALL_INDIA" }).expect(400);
+  });
+});
+
+describe("search demand log", () => {
+  let db: pg.Client;
+
+  beforeAll(async () => {
+    db = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    await db.connect();
+    await db.query("DELETE FROM search_demand_log");
+  });
+
+  afterAll(async () => {
+    await db.query("DELETE FROM search_demand_log");
+    await db.end();
+  });
+
+  const rows = async () => (await db.query("SELECT * FROM search_demand_log ORDER BY id")).rows;
+
+  it("logs a zero-result name search without the name", async () => {
+    const res = await request(http)
+      .get("/api/v1/search/unclaimed")
+      .query({ fullName: "Zorawar Quixotefield", state: "GOA" })
+      .expect(200);
+    expect(res.body.total).toBe(0);
+    const logged = await rows();
+    expect(logged).toHaveLength(1);
+    expect(logged[0]).toMatchObject({
+      search_mode: "name",
+      company_query: null,
+      company_known: false,
+      state: "GOA",
+      result_count: 0,
+    });
+    expect(logged[0].name_hash).toHaveLength(16);
+    expect(JSON.stringify(logged).toLowerCase()).not.toMatch(/zorawar|quixotefield/);
+  });
+
+  it("does not log a search that found something", async () => {
+    await request(http)
+      .get("/api/v1/search/unclaimed")
+      .query({ lastName: "Agarwal", state: "DELHI" })
+      .expect(200);
+    await request(http)
+      .get("/api/v1/search/folio")
+      .query({ company: "Reliance", folio: "RIL0012345621" })
+      .expect(200);
+    expect(await rows()).toHaveLength(1);
+  });
+
+  it("logs folio lookups by normalized company, never the folio", async () => {
+    await request(http)
+      .get("/api/v1/search/folio")
+      .query({ company: "The Imaginary Tea Estates Ltd.", folio: "ITE77001", state: "ASSAM" })
+      .expect(200);
+    await request(http)
+      .get("/api/v1/search/folio")
+      .query({ company: "Reliance Industries", folio: "NOPE99" })
+      .expect(200);
+    const logged = (await rows()).filter((r) => r.search_mode === "company_folio");
+    expect(logged).toMatchObject([
+      { company_query: "imaginary tea estates", company_known: false, state: "ASSAM" },
+      { company_query: "reliance industries", company_known: true, state: null },
+    ]);
+    expect(JSON.stringify(logged)).not.toMatch(/ITE77001|NOPE99/i);
+  });
+
+  it("counts the same question from the same searcher once in 'searchers'", async () => {
+    for (let i = 0; i < 2; i++)
+      await request(http)
+        .get("/api/v1/search/folio")
+        .query({ company: "imaginary tea estates", folio: "ite 77001", state: "ASSAM" })
+        .expect(200);
+    const report = await request(http)
+      .get("/api/v1/search/demand")
+      .query({ days: 30 })
+      .set(auth("analyst"))
+      .expect(200);
+    expect(report.body.uncoveredCompanies[0]).toEqual({
+      companyQuery: "imaginary tea estates",
+      searches: 3,
+      searchers: 1,
+    });
+    expect(report.body.coveredCompaniesMissingFolio).toEqual([
+      { companyQuery: "reliance industries", searches: 1, searchers: 1 },
+    ]);
+    expect(report.body.zeroResultSearches).toBe(5);
+    expect(report.body.byState).toEqual(
+      expect.arrayContaining([{ state: "ASSAM", searches: 3, searchers: 1 }]),
+    );
+  });
+
+  it("is staff only, for 30 or 90 days", async () => {
+    await request(http).get("/api/v1/search/demand").expect(401);
+    await request(http).get("/api/v1/search/demand").set(auth("venkatesh")).expect(403);
+    await request(http).get("/api/v1/search/demand").set(auth("legal")).expect(200);
+    await request(http).get("/api/v1/search/demand").set(auth("admin")).expect(200);
+    await request(http).get("/api/v1/search/demand?days=7").set(auth("analyst")).expect(400);
+    const ninety = await request(http)
+      .get("/api/v1/search/demand?days=90")
+      .set(auth("analyst"))
+      .expect(200);
+    expect(ninety.body.days).toBe(90);
+  });
+
+  it("never fails or slows a search when the log cannot be written", async () => {
+    await db.query("ALTER TABLE search_demand_log RENAME TO search_demand_log_away");
+    try {
+      const started = Date.now();
+      const res = await request(http)
+        .get("/api/v1/search/unclaimed")
+        .query({ fullName: "Zorawar Quixotefield", state: "GOA" })
+        .expect(200);
+      expect(res.body.total).toBe(0);
+      expect(Date.now() - started).toBeLessThan(5_000);
+      await request(http)
+        .get("/api/v1/search/folio")
+        .query({ company: "Imaginary Tea", folio: "ITE1" })
+        .expect(200);
+    } finally {
+      await db.query("ALTER TABLE search_demand_log_away RENAME TO search_demand_log");
+    }
+  });
+
+  it("prunes rows past 90 days and keeps at most 75,000", async () => {
+    const { SearchDemandService, MAX_ROWS } =
+      await import("../src/modules/search/search-demand.service.js");
+    const demand = app.get(SearchDemandService);
+    await db.query("DELETE FROM search_demand_log");
+    await db.query(`INSERT INTO search_demand_log (search_mode, name_hash, created_at)
+      SELECT 'name', '\\x00000000000000000000000000000000'::bytea, now() - interval '100 days'
+        FROM generate_series(1, 5)`);
+    await db.query(`INSERT INTO search_demand_log (search_mode, name_hash)
+      SELECT 'name', '\\x00000000000000000000000000000000'::bytea FROM generate_series(1, ${MAX_ROWS + 10})`);
+    const pruned = await demand.prune();
+    expect(pruned).toEqual({ expired: 5, overCap: 10 });
+    const left = await db.query(
+      "SELECT count(*)::int AS n, min(id) AS lo, max(id) AS hi FROM search_demand_log",
+    );
+    expect(left.rows[0].n).toBe(MAX_ROWS);
+    expect(Number(left.rows[0].hi) - Number(left.rows[0].lo) + 1).toBe(MAX_ROWS);
+  });
+});
+
 describe("Login Gateway, claims and analyst folio release", () => {
   const phone = "9876500001";
   let token: string;

@@ -7,6 +7,7 @@ import { Public } from "../../common/auth/decorators.js";
 import { ENV, type Env } from "../../config/env.js";
 import { EquitiesService } from "../../market/equities.service.js";
 import { MarketService } from "../../market/market.service.js";
+import { SearchDemandService } from "../search/search-demand.service.js";
 
 /**
  * Scheduled work for serverless hosts, which have no long-lived process for
@@ -19,6 +20,7 @@ export class CronController {
     @Inject(ENV) private readonly env: Env,
     private readonly market: MarketService,
     private readonly equities: EquitiesService,
+    private readonly demand: SearchDemandService,
   ) {}
 
   @Public()
@@ -31,6 +33,7 @@ export class CronController {
       throw new NotFoundException();
     const directory = await this.equities.refreshDirectory();
     const prices = await this.market.syncAll();
-    return { directory, prices };
+    const demandLog = await this.demand.prune();
+    return { directory, prices, demandLog };
   }
 }

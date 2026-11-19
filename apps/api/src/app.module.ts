@@ -38,6 +38,7 @@ import { ImportsController } from "./modules/imports/imports.controller.js";
 import { ImportsService } from "./modules/imports/imports.service.js";
 import { SearchController } from "./modules/search/search.controller.js";
 import { MeiliSearchEngine, PostgresSearchEngine } from "./modules/search/search-engine.js";
+import { SearchDemandService } from "./modules/search/search-demand.service.js";
 import { SearchService } from "./modules/search/search.service.js";
 import { LiveMcaSyncService } from "./modules/search/live-mca-sync.service.js";
 import { SEARCH_ENGINE, SEARCH_POOL } from "./modules/search/search.tokens.js";
@@ -115,6 +116,7 @@ import { ValuationController } from "./modules/valuation/valuation.controller.js
     OtpService,
     IntakeService,
     SearchService,
+    SearchDemandService,
     LiveMcaSyncService,
     CasesService,
     CrmService,

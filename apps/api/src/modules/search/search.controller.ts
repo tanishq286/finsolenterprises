@@ -22,9 +22,16 @@ import {
 } from "@finsol/shared";
 import { z } from "zod";
 
-import { clientIp, CurrentUser, Public, type AuthedRequest } from "../../common/auth/decorators.js";
+import {
+  clientIp,
+  CurrentUser,
+  Public,
+  Roles,
+  type AuthedRequest,
+} from "../../common/auth/decorators.js";
 import type { SessionClaims } from "../../common/auth/tokens.service.js";
 import { LiveMcaSyncService } from "./live-mca-sync.service.js";
+import { SearchDemandService } from "./search-demand.service.js";
 import { SearchService } from "./search.service.js";
 
 const name = z.string().trim().max(60).optional();
@@ -46,6 +53,26 @@ export const searchQuerySchema = z
     message: "Enter the investor's name.",
   });
 
+export const folioSearchSchema = z.object({
+  company: z.string().trim().min(1, { error: "Enter the company name." }).max(120),
+  folio: z
+    .string()
+    .trim()
+    .min(1, { error: "Enter the folio number." })
+    .max(40)
+    .regex(/^[A-Za-z0-9 ./_-]+$/, {
+      error: "Enter the folio number as printed on the certificate.",
+    }),
+  state: z.enum(INDIAN_STATES).optional(),
+});
+
+export const demandQuerySchema = z.object({
+  days: z.coerce
+    .number()
+    .pipe(z.union([z.literal(30), z.literal(90)]))
+    .default(30),
+});
+
 export const claimSchema = z.object({
   folioIds: z.array(z.uuid()).min(1).max(10),
   relationshipToHolder: z.enum(RELATIONSHIPS),
@@ -59,6 +86,7 @@ export class SearchController {
   constructor(
     private readonly search: SearchService,
     private readonly live: LiveMcaSyncService,
+    private readonly demand: SearchDemandService,
   ) {}
 
   /**
@@ -74,6 +102,29 @@ export class SearchController {
     @Req() req: AuthedRequest,
   ) {
     return this.search.search(query, { user, ip: clientIp(req) });
+  }
+
+  /**
+   * GET /api/v1/search/folio: exact company + folio lookup. The public gets
+   * only whether a record exists; members and staff get the tiered rows.
+   * Tighter than the name search: folio numbers are short and guessable.
+   */
+  @Public()
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @Get("folio")
+  folio(
+    @Query({ schema: folioSearchSchema }) query: z.infer<typeof folioSearchSchema>,
+    @CurrentUser() user: SessionClaims | undefined,
+    @Req() req: AuthedRequest,
+  ) {
+    return this.search.searchByFolio(query, { user, ip: clientIp(req) });
+  }
+
+  /** GET /api/v1/search/demand?days=30|90: staff only. Zero-result searches, aggregated. */
+  @Roles("VALUATION_ANALYST", "LEGAL_OPS_EXEC")
+  @Get("demand")
+  demandReport(@Query({ schema: demandQuerySchema }) query: z.infer<typeof demandQuerySchema>) {
+    return this.demand.report(query.days);
   }
 
   /** GET /api/v1/search/live/:id: server-sent events for the live refresh a search started. */
