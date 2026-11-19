@@ -825,6 +825,8 @@ model TraceRequest {
   holderName          String   @map("holder_name")
   scope               String
   detailsEnc          String   @map("details_enc")
+  /// Optional shareholder PAN, AES-256-GCM ciphertext. Decrypted only for staff.
+  holderPanEnc        String?  @map("holder_pan_enc")
   consentAt           DateTime @map("consent_at") @db.Timestamptz(6)
   status              String   @default("OPEN")
   /// LOGIN_OTP, PENDING_CALL_VERIFICATION or CALL_VERIFIED.

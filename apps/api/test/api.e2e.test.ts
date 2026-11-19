@@ -2026,6 +2026,116 @@ describe("assisted traces", () => {
       .send({ status: "OPEN" })
       .expect(400);
   });
+
+  describe("optional shareholder PAN", () => {
+    const PAN = "ABCPK4321Z";
+    const withPan = (holderPan?: string) => ({
+      ...body,
+      requestId: randomUUID(),
+      ...(holderPan === undefined ? {} : { holderPan }),
+    });
+    let panTraceId: string;
+    let panReference: string;
+
+    it("stores a valid PAN encrypted, and shows it only to staff", async () => {
+      const res = await request(http)
+        .post("/api/v1/traces")
+        .set(auth("sunita"))
+        .send(withPan(`  ${PAN.toLowerCase()} `))
+        .expect(201);
+      panTraceId = res.body.id;
+      panReference = res.body.reference;
+      expect(JSON.stringify(res.body)).not.toContain(PAN);
+
+      const prisma = app.get(PrismaService).client;
+      const stored = await prisma.traceRequest.findUniqueOrThrow({ where: { id: panTraceId } });
+      expect(stored.holderPanEnc).toMatch(/^v1:/);
+      expect(JSON.stringify(stored)).not.toContain(PAN);
+      expect(JSON.stringify(stored).toLowerCase()).not.toContain(PAN.toLowerCase());
+
+      const detail = await request(http)
+        .get(`/api/v1/admin/traces/${panTraceId}`)
+        .set(auth("analyst"))
+        .expect(200);
+      expect(detail.body.holderPan).toBe(PAN);
+      expect(detail.body).not.toHaveProperty("holderPanEnc");
+      expect(detail.body.details).not.toHaveProperty("holderPan");
+      await request(http).get(`/api/v1/admin/traces/${panTraceId}`).set(auth("legal")).expect(200);
+      await request(http).get(`/api/v1/admin/traces/${panTraceId}`).set(auth("sunita")).expect(403);
+    });
+
+    it("never returns the PAN to the claimant or in the staff list", async () => {
+      const mine = await request(http).get("/api/v1/traces").set(auth("sunita")).expect(200);
+      expect(mine.body.some((t: { id: string }) => t.id === panTraceId)).toBe(true);
+      expect(JSON.stringify(mine.body)).not.toContain(PAN);
+      const list = await request(http).get("/api/v1/admin/traces").set(auth("analyst")).expect(200);
+      expect(list.body.items.some((t: { reference: string }) => t.reference === panReference)).toBe(
+        true,
+      );
+      expect(JSON.stringify(list.body)).not.toContain(PAN);
+    });
+
+    it("rejects a malformed PAN without repeating it", async () => {
+      for (const bad of ["ABCP4321KZ", "ABCPK4321", "ABCPK43210Z", "ABC-K4321Z"]) {
+        const res = await request(http)
+          .post("/api/v1/traces")
+          .set(auth("sunita"))
+          .send(withPan(bad))
+          .expect(400);
+        expect(JSON.stringify(res.body), bad).not.toContain(bad);
+      }
+    });
+
+    it("accepts an omitted or empty PAN and stores nothing", async () => {
+      const prisma = app.get(PrismaService).client;
+      for (const holderPan of [undefined, "", "   "]) {
+        const res = await request(http)
+          .post("/api/v1/traces")
+          .set(auth("sunita"))
+          .send(withPan(holderPan))
+          .expect(201);
+        const stored = await prisma.traceRequest.findUniqueOrThrow({ where: { id: res.body.id } });
+        expect(stored.holderPanEnc).toBeNull();
+        const detail = await request(http)
+          .get(`/api/v1/admin/traces/${res.body.id}`)
+          .set(auth("analyst"))
+          .expect(200);
+        expect(detail.body.holderPan).toBeNull();
+      }
+    });
+
+    it("keeps the PAN out of audit and lead records, and away from the client role", async () => {
+      const c = new pg.Client({ connectionString: process.env.DATABASE_URL });
+      await c.connect();
+      try {
+        const audit = await c.query(
+          "SELECT data FROM audit_events WHERE entity_id = $1 AND action = 'TRACE_VIEWED'",
+          [panTraceId],
+        );
+        expect(audit.rows.length).toBeGreaterThan(0);
+        expect(audit.rows.every((r) => r.data?.panShown === true)).toBe(true);
+        const leaks = await c.query(
+          `SELECT
+             (SELECT count(*)::int FROM audit_events WHERE data::text ILIKE '%' || $1 || '%') AS audit,
+             (SELECT count(*)::int FROM leads_and_inquiries WHERE row_to_json(leads_and_inquiries)::text ILIKE '%' || $1 || '%') AS leads,
+             (SELECT count(*)::int FROM trace_requests WHERE row_to_json(trace_requests)::text ILIKE '%' || $1 || '%') AS traces`,
+          [PAN],
+        );
+        expect(leaks.rows[0]).toEqual({ audit: 0, leads: 0, traces: 0 });
+        const priv = await c.query(
+          `SELECT has_column_privilege('finsol_app_client', 'trace_requests', 'holder_pan_enc', 'SELECT') AS can_read,
+                  has_table_privilege('finsol_app_client', 'trace_requests', 'SELECT') AS table_read`,
+        );
+        expect(priv.rows[0]).toEqual({ can_read: false, table_read: false });
+        // The column only accepts ciphertext.
+        await expect(
+          c.query("UPDATE trace_requests SET holder_pan_enc = $1 WHERE id = $2", [PAN, panTraceId]),
+        ).rejects.toThrow(/trace_requests_holder_pan_enc_ciphertext/);
+      } finally {
+        await c.end();
+      }
+    });
+  });
 });
 
 describe("durable acquisition queue", () => {
@@ -2170,6 +2280,11 @@ describe("intake without a sign-in code", () => {
         .post("/api/v1/traces/guest")
         .send({ ...trace, consent: false })
         .expect(400);
+      const badPan = await request(http)
+        .post("/api/v1/traces/guest")
+        .send({ ...trace, requestId: randomUUID(), holderPan: "ZZZPK43210" })
+        .expect(400);
+      expect(JSON.stringify(badPan.body)).not.toContain("ZZZPK43210");
       const res = await request(http).post("/api/v1/traces/guest").send(trace).expect(201);
       expect(res.body.reference).toMatch(/^FIN-TRC-[A-Z2-9]{6}$/);
       expect(res.body).toMatchObject({

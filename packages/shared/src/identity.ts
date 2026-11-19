@@ -158,3 +158,13 @@ export const RECORD_KIND_LABELS: Record<RecordKind, string> = {
   SHARES: "Shares listed",
   UNCLAIMED_AMOUNT: "Unclaimed dividend amount (no share count stated)",
 };
+
+/** Indian PAN: 5 letters, 4 digits, 1 letter, e.g. ABCDE1234F. */
+export const PAN_PATTERN = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
+
+/** Trim and uppercase a typed PAN; "" when nothing was typed. Format is not checked here. */
+export function normalizePan(raw: string | null | undefined): string {
+  return (raw ?? "").trim().toUpperCase();
+}
+
+export const PAN_FORMAT_MESSAGE = "Enter the PAN as 10 characters: 5 letters, 4 digits, 1 letter.";

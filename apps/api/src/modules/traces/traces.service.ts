@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { decryptField, encryptField } from "@finsol/db";
+import { normalizePan } from "@finsol/shared";
 import { PrismaService } from "../../common/prisma.service.js";
 import { AuditService } from "../../common/audit.service.js";
 import type { SessionClaims } from "../../common/auth/tokens.service.js";
@@ -101,7 +102,9 @@ export class TracesService {
       contact: { phone: string; phoneVerifiedBy: string; email: string | null; name: string };
     },
   ) {
-    const { requestId, consent: _consent, ...details } = body;
+    // The PAN gets its own encrypted column, so it is not part of the details blob.
+    const { requestId, consent: _consent, holderPan, ...details } = body;
+    const pan = holderPan ? normalizePan(holderPan) : "";
     const contactInfo = owner.contact;
     const coverage = await this.search.coverage();
     for (let attempt = 0; ; attempt++) {
@@ -116,6 +119,7 @@ export class TracesService {
             leadId: owner.leadId,
             contactVerification: owner.contactVerification,
             holderName: encryptField(body.holderName, this.prisma.fieldKeys),
+            holderPanEnc: pan ? encryptField(pan, this.prisma.fieldKeys) : null,
             scope: body.scope,
             status: "PENDING_AUDIT",
             detailsEnc: encryptField(
@@ -185,11 +189,14 @@ export class TracesService {
       action: "TRACE_VIEWED",
       entityType: "TraceRequest",
       entityId: id,
+      // Whether a PAN was shown, never the PAN itself.
+      data: { panShown: item.holderPanEnc !== null },
     });
-    const { detailsEnc, holderName, ...rest } = item;
+    const { detailsEnc, holderName, holderPanEnc, ...rest } = item;
     return {
       ...rest,
       holderName: decryptField(holderName, this.prisma.fieldKeys),
+      holderPan: holderPanEnc ? decryptField(holderPanEnc, this.prisma.fieldKeys) : null,
       details: JSON.parse(decryptField(detailsEnc, this.prisma.fieldKeys)),
       checks: item.checks.map((c) => ({
         ...c,
