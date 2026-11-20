@@ -40,8 +40,12 @@ export function FolioLookup() {
     setError(null);
     setResult(null);
     try {
-      const qs = new URLSearchParams({ company: company.trim(), folio: folio.trim() });
-      setResult(await callApi<FolioSearchResponse>(`search/folio?${qs}`));
+      setResult(
+        await callApi<FolioSearchResponse>("search/folio", {
+          method: "POST",
+          body: { company: company.trim(), folio: folio.trim() },
+        }),
+      );
       setCheckedCompany(company.trim());
     } catch (e) {
       setError((e as Error).message);

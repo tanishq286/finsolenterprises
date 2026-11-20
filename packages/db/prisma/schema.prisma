@@ -387,7 +387,6 @@ model UnclaimedFolio {
   // Partitioned by LIST (state); the database primary key is (id, state).
   // See migrations/20261101000000_finsol.
   @@unique([companyId, folioNumberHash, investorFullName, state], map: "unclaimed_folios_company_folio_holder_state_key")
-  @@index([companyId, folioNumberHash], map: "unclaimed_folios_company_folio_idx")
   @@index([lastNameKey, firstNameKey, postActionShares(sort: Desc)], map: "unclaimed_folios_last_first_key_idx")
   @@index([lastNameKey])
   @@index([firstNameKey])

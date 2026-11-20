@@ -105,9 +105,27 @@ export class SearchController {
   }
 
   /**
-   * GET /api/v1/search/folio: exact company + folio lookup. The public gets
-   * only whether a record exists; members and staff get the tiered rows.
-   * Tighter than the name search: folio numbers are short and guessable.
+   * POST /api/v1/search/folio: exact company + folio lookup. Reading from the
+   * JSON body keeps folio numbers out of URL query logs. The public gets only
+   * whether a record exists; members and staff get the tiered rows. Tighter
+   * than the name search: folio numbers are short and guessable.
+   */
+  @Public()
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @Post("folio")
+  @HttpCode(200)
+  folioPost(
+    @Body({ schema: folioSearchSchema }) body: z.infer<typeof folioSearchSchema>,
+    @CurrentUser() user: SessionClaims | undefined,
+    @Req() req: AuthedRequest,
+  ) {
+    return this.search.searchByFolio(body, { user, ip: clientIp(req) });
+  }
+
+  /**
+   * @deprecated Use POST /api/v1/search/folio so folio numbers stay out of URL
+   * query logs. Kept briefly for in-flight web sessions across the API/web
+   * rollout window; remove once both deploys are live.
    */
   @Public()
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
