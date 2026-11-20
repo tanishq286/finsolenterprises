@@ -89,7 +89,10 @@ export const RESULTS_BY_ID = {
   name: "search_results_by_id_v2",
   text: `SELECT ${RESULT_COLUMNS} WHERE f.id = ANY($1::uuid[]) AND ${PUBLISHED}`,
 };
-/** Exact company + folio: served by each partition's (company_id, folio_number_hash) index. */
+/**
+ * Exact company + folio: served by the leftmost prefix of each partition's
+ * unique (company_id, folio_number_hash, investor_full_name, state) index.
+ */
 export const RESULTS_BY_FOLIO = {
   name: "search_results_by_folio_v1",
   text: `SELECT ${RESULT_COLUMNS} WHERE f.company_id = ANY($1::uuid[]) AND f.folio_number_hash = ANY($2::text[]) AND ${PUBLISHED} LIMIT ${RESULT_LIMIT}`,

@@ -203,9 +203,9 @@ describe("GET /search/unclaimed: the 3-Minute Check", () => {
   });
 });
 
-describe("GET /search/folio: company + folio lookup", () => {
-  const folio = (query: Record<string, string>) =>
-    request(http).get("/api/v1/search/folio").query(query);
+describe("POST /search/folio: company + folio lookup", () => {
+  const folio = (body: Record<string, unknown>) =>
+    request(http).post("/api/v1/search/folio").send(body);
 
   it("tells the public only that a record exists, never whose it is", async () => {
     const res = await folio({ company: "Reliance Industries Ltd", folio: "RIL0012345621" }).expect(
@@ -223,14 +223,16 @@ describe("GET /search/folio: company + folio lookup", () => {
       expect(body).not.toContain(secret);
   });
 
-  it("ignores tier flags sent by the caller", async () => {
+  it("ignores tier flags sent by the caller in the JSON body", async () => {
     const res = await folio({
       company: "Reliance Industries",
       folio: "RIL0012345621",
-      isAuthenticated: "true",
+      isAuthenticated: true,
       role: "SUPER_ADMIN",
       access: "staff",
+      user: { sub: "fake", role: "SUPER_ADMIN" },
     }).expect(200);
+    expect(Object.keys(res.body).sort()).toEqual(["access", "companyMatched", "found", "mode"]);
     expect(res.body.access).toBe("public");
     expect(res.body.results).toBeUndefined();
   });
@@ -276,11 +278,28 @@ describe("GET /search/folio: company + folio lookup", () => {
     });
   });
 
-  it("rejects a missing company, a too-short company and a malformed folio", async () => {
+  it("rejects a missing company, a too-short company, a non-string or malformed folio", async () => {
+    await folio({}).expect(400);
     await folio({ folio: "RIL0012345621" }).expect(400);
+    await folio({ company: "Reliance" }).expect(400);
     await folio({ company: "Re", folio: "RIL0012345621" }).expect(400);
+    await folio({ company: "Reliance", folio: 12345 }).expect(400);
     await folio({ company: "Reliance", folio: "RIL'; DROP TABLE x;--" }).expect(400);
     await folio({ company: "Reliance", folio: "RIL0012345621", state: "ALL_INDIA" }).expect(400);
+  });
+
+  it("keeps deprecated GET /search/folio compatible during rollout with the same public guardrails", async () => {
+    const res = await request(http)
+      .get("/api/v1/search/folio")
+      .query({ company: "Reliance Industries", folio: "RIL0012345621", access: "staff" })
+      .expect(200);
+    expect(Object.keys(res.body).sort()).toEqual(["access", "companyMatched", "found", "mode"]);
+    expect(res.body).toMatchObject({
+      mode: "COMPANY_FOLIO",
+      access: "public",
+      companyMatched: true,
+    });
+    expect(res.body.found).toBeGreaterThanOrEqual(1);
   });
 });
 
@@ -325,20 +344,20 @@ describe("search demand log", () => {
       .query({ lastName: "Agarwal", state: "DELHI" })
       .expect(200);
     await request(http)
-      .get("/api/v1/search/folio")
-      .query({ company: "Reliance", folio: "RIL0012345621" })
+      .post("/api/v1/search/folio")
+      .send({ company: "Reliance", folio: "RIL0012345621" })
       .expect(200);
     expect(await rows()).toHaveLength(1);
   });
 
   it("logs folio lookups by normalized company, never the folio", async () => {
     await request(http)
-      .get("/api/v1/search/folio")
-      .query({ company: "The Imaginary Tea Estates Ltd.", folio: "ITE77001", state: "ASSAM" })
+      .post("/api/v1/search/folio")
+      .send({ company: "The Imaginary Tea Estates Ltd.", folio: "ITE77001", state: "ASSAM" })
       .expect(200);
     await request(http)
-      .get("/api/v1/search/folio")
-      .query({ company: "Reliance Industries", folio: "NOPE99" })
+      .post("/api/v1/search/folio")
+      .send({ company: "Reliance Industries", folio: "NOPE99" })
       .expect(200);
     const logged = (await rows()).filter((r) => r.search_mode === "company_folio");
     expect(logged).toMatchObject([
@@ -351,8 +370,8 @@ describe("search demand log", () => {
   it("counts the same question from the same searcher once in 'searchers'", async () => {
     for (let i = 0; i < 2; i++)
       await request(http)
-        .get("/api/v1/search/folio")
-        .query({ company: "imaginary tea estates", folio: "ite 77001", state: "ASSAM" })
+        .post("/api/v1/search/folio")
+        .send({ company: "imaginary tea estates", folio: "ite 77001", state: "ASSAM" })
         .expect(200);
     const report = await request(http)
       .get("/api/v1/search/demand")
@@ -397,8 +416,8 @@ describe("search demand log", () => {
       expect(res.body.total).toBe(0);
       expect(Date.now() - started).toBeLessThan(5_000);
       await request(http)
-        .get("/api/v1/search/folio")
-        .query({ company: "Imaginary Tea", folio: "ITE1" })
+        .post("/api/v1/search/folio")
+        .send({ company: "Imaginary Tea", folio: "ITE1" })
         .expect(200);
     } finally {
       await db.query("ALTER TABLE search_demand_log_away RENAME TO search_demand_log");
