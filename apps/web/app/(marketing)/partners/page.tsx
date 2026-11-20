@@ -57,6 +57,18 @@ export default async function PartnersPage({
   const partners = await apiOrNull<LocatorEntry[]>(`associates/locator${qs.size ? `?${qs}` : ""}`, {
     revalidate: 300,
   });
+  // A filtered search that finds nobody: are there any verified partners at all?
+  const anyListed =
+    partners === null
+      ? null
+      : partners.length > 0
+        ? true
+        : qs.size === 0
+          ? false
+          : ((await apiOrNull<LocatorEntry[]>("associates/locator", { revalidate: 300 }))?.length ??
+              0) > 0;
+  // With no verified partners anywhere, a State/City filter is a dead end: offer joining instead.
+  const noneListed = anyListed === false;
 
   return (
     <div className="mx-auto max-w-[1200px] px-4 py-12 sm:px-6 sm:py-16">
@@ -102,50 +114,64 @@ export default async function PartnersPage({
         <p className="mt-2 max-w-[60ch] text-fg-2">
           Only partners whose professional details we have checked are listed.
         </p>
-        <Form
-          action="/partners"
-          className="mt-6 grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end"
-        >
-          <div>
-            <label htmlFor="p-state" className="mb-1.5 block text-sm text-fg-3">
-              State
-            </label>
-            <Select id="p-state" name="state" defaultValue={state}>
-              <StateOptions placeholder="Any state" />
-            </Select>
-          </div>
-          <div>
-            <label htmlFor="p-city" className="mb-1.5 block text-sm text-fg-3">
-              City
-            </label>
-            <Input
-              id="p-city"
-              name="city"
-              defaultValue={city}
-              placeholder="Any city"
-              maxLength={80}
-            />
-          </div>
-          <Button type="submit" variant="outline" className="min-h-12">
-            <MapPinIcon aria-hidden="true" />
-            Show partners
-          </Button>
-        </Form>
+        {!noneListed && (
+          <Form
+            action="/partners"
+            className="mt-6 grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end"
+          >
+            <div>
+              <label htmlFor="p-state" className="mb-1.5 block text-sm text-fg-3">
+                State
+              </label>
+              <Select id="p-state" name="state" defaultValue={state}>
+                <StateOptions placeholder="Any state" />
+              </Select>
+            </div>
+            <div>
+              <label htmlFor="p-city" className="mb-1.5 block text-sm text-fg-3">
+                City
+              </label>
+              <Input
+                id="p-city"
+                name="city"
+                defaultValue={city}
+                placeholder="Any city"
+                maxLength={80}
+              />
+            </div>
+            <Button type="submit" variant="outline" className="min-h-12">
+              <MapPinIcon aria-hidden="true" />
+              Show partners
+            </Button>
+          </Form>
+        )}
 
         {partners === null ? (
           <p className="mt-6 text-fg-3">The partner directory is not available right now.</p>
-        ) : partners.length === 0 && !state && !city ? (
-          <p className="mt-6 text-fg-2" role="status" data-testid="partners-empty-global">
-            There are no verified partners listed yet. You can still{" "}
-            <Link href="/search" className="link">
-              check for unclaimed holdings
-            </Link>{" "}
-            or write to{" "}
-            <a href={`mailto:${BRAND_EMAILS.partners}`} className="link">
-              {BRAND_EMAILS.partners}
-            </a>
-            .
-          </p>
+        ) : noneListed ? (
+          <div
+            className="panel mt-6 flex flex-col items-start gap-4 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6"
+            role="status"
+            data-testid="partners-empty-global"
+          >
+            <div>
+              <p className="text-lg font-semibold text-fg">No verified partners are listed yet</p>
+              <p className="mt-1 max-w-[60ch] text-fg-2">
+                Are you a CA, CS, advocate or advisor? Apply to be the first listed partner in your
+                city. Families can still{" "}
+                <Link href="/search" className="link">
+                  check for unclaimed holdings
+                </Link>{" "}
+                directly.
+              </p>
+            </div>
+            <Button asChild className="shrink-0 whitespace-nowrap">
+              <Link href="/partners/join">
+                Apply to become a partner
+                <ArrowRightIcon aria-hidden="true" />
+              </Link>
+            </Button>
+          </div>
         ) : partners.length === 0 ? (
           <p className="mt-6 text-fg-2" role="status" data-testid="partners-empty-filtered">
             No verified partners{" "}

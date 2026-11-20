@@ -13,6 +13,8 @@ import {
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { SegmentedTabs } from "@/components/ui/segmented-tabs";
+import { FolioLookup } from "@/components/search/folio-lookup";
 import { LiveRefresh } from "@/components/search/live-refresh";
 import { CoveragePanel } from "@/components/search/coverage-panel";
 import { DeeperTrace } from "@/components/search/deeper-trace";
@@ -89,16 +91,36 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
 
   return (
     <div className="mx-auto max-w-[1200px] px-4 py-12 sm:px-6 sm:py-16">
-      <h1 className="display max-w-[20ch] text-[clamp(2rem,4vw,3rem)] text-fg">
-        Start your 3-Minute Check
-      </h1>
-      <p className="mt-4 max-w-[60ch] text-lg text-fg-2">
-        Just a name and a state. {BRAND.promise.join(" • ")}.
-      </p>
-      <UnclaimedSearchForm
-        className="mt-8 max-w-[56rem]"
-        defaults={{ name, jointHolder: joint, state }}
-      />
+      <div className="mx-auto max-w-[56rem]">
+        <h1 className="display max-w-[20ch] text-[clamp(2rem,4vw,3rem)] text-fg">
+          Start your 3-Minute Check
+        </h1>
+        <p className="mt-4 max-w-[60ch] text-lg text-fg-2">
+          Just a name and a state. {BRAND.promise.join(" • ")}.
+        </p>
+        <SegmentedTabs
+          label="Search by"
+          className="mt-8"
+          actionsClassName="mb-4"
+          tabs={[
+            {
+              id: "name",
+              label: "By Name",
+              content: <UnclaimedSearchForm defaults={{ name, jointHolder: joint, state }} />,
+            },
+            { id: "folio", label: "By Company & Folio", content: <FolioLookup /> },
+          ]}
+        />
+        <p className="mt-4 text-sm text-fg-2">
+          Have an old certificate, a former address or a company in mind?{" "}
+          <Link
+            href={`/deeper-trace?${new URLSearchParams({ ...(name ? { name } : {}), ...(state ? { state } : {}) })}`}
+            className="link font-medium whitespace-nowrap text-signal"
+          >
+            Ask for a Deeper Trace →
+          </Link>
+        </p>
+      </div>
 
       <section aria-live="polite" aria-label="Results" className="mt-12">
         {error?.kind === "unavailable" && (
@@ -145,9 +167,8 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
                 className="text-lg font-semibold text-fg leading-relaxed"
                 data-testid="deeper-trace-reassurance"
               >
-                We searched our instant index of top listed companies. Don&apos;t worry if your name
-                wasn&apos;t found—over 3,000 older companies and physical share certificates require
-                an archival RTA trace.
+                We searched our instant index of listed companies. Many older companies and physical
+                certificates are not in our index yet; an analyst can trace them.
               </p>
             </div>
 
@@ -184,10 +205,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
                 {data.truncated ? "+" : ""} {data.total === 1 ? "record" : "records"} for {who} in{" "}
                 {where}
               </h2>
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                {data.liveRefreshId && <LiveRefresh id={data.liveRefreshId} />}
-                <p className="text-sm text-fg-3 tnum">Checked in {data.tookMs} ms</p>
-              </div>
+              {data.liveRefreshId && <LiveRefresh id={data.liveRefreshId} />}
             </div>
             {data.truncated && (
               <Alert variant="pending" className="mb-5" role="status">

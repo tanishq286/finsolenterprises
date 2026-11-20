@@ -1,7 +1,7 @@
 import { DatabaseIcon } from "lucide-react";
 import { COVERAGE_DISCLAIMER, type SearchCoverage } from "@finsol/shared";
 
-import { formatCount, formatDate } from "@/lib/format";
+import { formatCount, formatDate, statementYears } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 /** A source older than this (by its newest record) is called out as old. */
@@ -55,11 +55,11 @@ export function CoveragePanel({
         <div>
           <dt className="text-fg-3">Statement period covered</dt>
           <dd className="text-fg tnum">
-            {coverage.oldestRecordYear === null
-              ? "Not known"
-              : coverage.oldestRecordYear === coverage.newestRecordYear
-                ? String(coverage.oldestRecordYear)
-                : `${coverage.oldestRecordYear}–${coverage.newestRecordYear}`}
+            {statementYears(
+              coverage.oldestRecordYear,
+              coverage.newestRecordYear,
+              coverage.latestSourcePublishedAt,
+            )}
             {old && (
               <span className="ml-1 text-pending">
                 (older statements; newer ones are not imported yet)

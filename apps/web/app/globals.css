@@ -266,7 +266,7 @@
   --highlight: inset 0 1px 0 var(--edge);
   --lift: var(--glass-rim), var(--glass-shadow);
   --overlay: 0 0 0 1px var(--glass-border), 0 40px 80px -20px var(--shadow-deep);
-  --chrome-bg: rgb(5 8 14 / 0.86);
+  --chrome-bg: rgb(5 8 14 / 0.96);
   --scrim: rgb(2 4 8 / 0.62);
   --link-rule: rgb(232 238 247 / 0.35);
   --selection: rgb(79 172 254 / 0.32);
@@ -372,7 +372,7 @@
   --shadow-deep: rgb(10 20 36 / 0.16);
   --highlight: 0 1px 2px rgb(10 20 36 / 0.04);
   --overlay: 0 0 0 1px rgb(10 20 36 / 0.07), 0 40px 80px -24px rgb(10 20 36 / 0.3);
-  --chrome-bg: rgb(243 246 250 / 0.88);
+  --chrome-bg: rgb(243 246 250 / 0.97);
   --scrim: rgb(10 20 36 / 0.3);
   --link-rule: rgb(10 20 36 / 0.3);
   --selection: rgb(3 105 161 / 0.18);
@@ -611,8 +611,8 @@
      (86%) to stay readable where backdrop blur isn't rendered. */
   .chrome {
     background-color: var(--chrome-bg);
-    backdrop-filter: blur(24px) saturate(160%);
-    -webkit-backdrop-filter: blur(24px) saturate(160%);
+    backdrop-filter: blur(32px) saturate(180%);
+    -webkit-backdrop-filter: blur(32px) saturate(180%);
   }
 }
 

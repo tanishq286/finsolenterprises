@@ -1,9 +1,9 @@
 import Form from "next/form";
-import { LockIcon, PlusIcon, SearchIcon } from "lucide-react";
+import { LockIcon, PlusIcon } from "lucide-react";
 import type { SearchScope } from "@finsol/shared";
 
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SearchSubmitButton } from "@/components/search/submit-button";
 import { Select } from "@/components/ui/select";
 import { StateOptions } from "@/components/search/state-options";
 import { CHECK_CTA } from "@/components/site/cta";
@@ -87,10 +87,9 @@ export function UnclaimedSearchForm({
             />
           </div>
         </details>
-        <Button type="submit" size="lg" className="sheen mt-3 min-h-12 w-full @[34rem]:w-auto">
-          <SearchIcon aria-hidden="true" />
+        <SearchSubmitButton className="sheen mt-3 min-h-12 w-full @[34rem]:w-auto">
           {CHECK_CTA}
-        </Button>
+        </SearchSubmitButton>
       </div>
       <p className="mt-3 flex items-start gap-1.5 text-sm text-fg-3">
         <LockIcon className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />

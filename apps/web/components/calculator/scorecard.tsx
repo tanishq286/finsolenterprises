@@ -47,7 +47,7 @@ export function CorporateActionTimeline({
         )}
       </figcaption>
       <ol
-        className="mt-4 grid gap-3 sm:grid-cols-[repeat(auto-fill,minmax(10.5rem,1fr))] sm:gap-x-4 sm:gap-y-5"
+        className="mt-4 grid gap-3 sm:grid-cols-[repeat(auto-fill,minmax(10.5rem,1fr))] sm:gap-x-4 sm:gap-y-5 sm:overflow-hidden"
         aria-label={`Corporate action timeline for ${v.name}`}
       >
         <TimelineNode
@@ -112,10 +112,17 @@ function TimelineNode({
     <li className="relative flex min-w-0 gap-3 sm:flex-col sm:gap-2">
       {/* Phones: a vertical line links each step to the one before. */}
       {!first && (
-        <span
-          aria-hidden="true"
-          className="absolute -top-3 left-[15px] h-3 w-px bg-line sm:hidden"
-        />
+        <>
+          {/* Phones: a vertical line up to the step before. Wider: a line back to it (clipped at a row's start). */}
+          <span
+            aria-hidden="true"
+            className="absolute -top-3 left-[15px] h-3 w-px bg-line sm:hidden"
+          />
+          <span
+            aria-hidden="true"
+            className="absolute top-4 right-full hidden h-px w-[calc(100%-1rem)] bg-signal/30 sm:block"
+          />
+        </>
       )}
       <span
         aria-hidden="true"
@@ -162,9 +169,10 @@ export function NetValueScorecard({
   return (
     <section
       aria-labelledby="scorecard-heading"
-      className="overflow-hidden rounded-[20px] border border-line bg-white shadow-sm"
+      className="@container overflow-hidden rounded-[20px] border border-line bg-white shadow-sm"
     >
-      <div className="grid gap-6 p-5 sm:p-6 lg:grid-cols-[1fr_1.15fr]">
+      {/* Side by side only when the card itself is wide (it sits in a half column on desktop). */}
+      <div className="grid gap-6 p-5 sm:p-6 @2xl:grid-cols-[1fr_1.15fr]">
         <div>
           <h3 id="scorecard-heading" className="text-sm font-medium text-fg-3">
             Total Claimable Wealth
@@ -202,10 +210,10 @@ export function NetValueScorecard({
             {formatPaise(e.totalClaimablePaise)}
           </Line>
           <Line
-            label="Success-Based Fee: Custom (Zero Upfront — Quoted per Engagement Letter)"
-            hint="Charged only on value actually credited to you."
+            label="Success-based fee"
+            hint="Nothing payable upfront · quoted in your engagement letter · charged only on value actually credited to you"
           >
-            ₹0 upfront
+            Custom quote
           </Line>
           <Line
             label="Statutory & documentation costs"

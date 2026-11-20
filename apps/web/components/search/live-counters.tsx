@@ -29,18 +29,18 @@ export async function LiveCounters({ className }: { className?: string }) {
     {
       Icon: Building2Icon,
       value: withRecords === null ? "—" : formatCount(withRecords),
-      label: withRecords === 1 ? "company with holder records" : "companies with holder records",
+      label: withRecords === 1 ? "Company with records" : "Companies with records",
     },
     {
       Icon: IndianRupeeIcon,
       value: formatPaiseCompact(value),
-      label: "verified IEPF & unclaimed value (estimate)",
+      label: "IEPF & unclaimed value (est.)",
     },
-    { Icon: MapPinnedIcon, value: formatCount(stats.states), label: "states and territories" },
+    { Icon: MapPinnedIcon, value: formatCount(stats.states), label: "States & territories" },
   ];
   return (
     <div className={className}>
-      <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
+      <dl className="vault-glass grid grid-cols-2 gap-x-6 gap-y-4 rounded-[20px] p-4 sm:p-5 lg:grid-cols-4">
         {items.map(({ Icon, value, label, headline }) => (
           <div key={label} className="min-w-0">
             <dt className="sr-only">{label}</dt>
@@ -53,13 +53,13 @@ export async function LiveCounters({ className }: { className?: string }) {
               <Icon className="size-4 shrink-0 text-signal" aria-hidden="true" />
               {value}
             </dd>
-            <dd aria-hidden="true" className="mt-0.5 text-sm text-fg-3">
+            <dd aria-hidden="true" className="mt-0.5 text-sm leading-snug text-balance text-fg-3">
               {label}
             </dd>
           </div>
         ))}
       </dl>
-      <p className="mt-3 text-sm text-fg-3">
+      <p className="mt-3 max-w-[90ch] text-sm text-fg-3">
         Records come from statements companies publish; one person can appear in several records,
         and most companies are not covered yet. The value counts shares with the IEPF, due for
         transfer or in a suspense account, once per folio, plus the unclaimed amounts listed, never

@@ -41,8 +41,8 @@ export function HeroReveal({
             gsap.set(all, { visibility: "visible" });
             return gsap
               .timeline()
-              .from(self.lines, { yPercent: 108, duration: 1.05, stagger: 0.09 })
-              .from(follow, { autoAlpha: 0, y: 14, duration: 0.8, stagger: 0.08 }, "-=0.7");
+              .from(self.lines, { yPercent: 108, duration: 0.6, stagger: 0.06 })
+              .from(follow, { autoAlpha: 0, y: 10, duration: 0.4, stagger: 0.05 }, "-=0.45");
           },
         });
         return () => split.revert();

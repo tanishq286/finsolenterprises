@@ -10,7 +10,7 @@ import { visitorHeaders } from "@/lib/api/visitor";
  * sees a token. Only listed API areas are reachable.
  */
 const ALLOWED =
-  /^(auth\/(otp\/request|otp\/verify|otp\/status|me)|search\/(unclaimed|claim|live\/[0-9a-f-]{36})|companies(\/.*)?|market\/(prices|equities(\/.*)?)|valuation\/report(\/guest)?|intake\/(status|callback)|stats|cases(\/.*)?|traces(\/guest|\/[0-9a-f-]{36}\/withdraw)?|crm\/.+|associates\/.+|admin\/(ingestion|companies)(\/.*)?|admin\/traces(\/[0-9a-f-]{36}(\/checks)?)?|health)$/;
+  /^(auth\/(otp\/request|otp\/verify|otp\/status|me)|search\/(unclaimed|folio|claim|live\/[0-9a-f-]{36})|companies(\/.*)?|market\/(prices|equities(\/.*)?)|valuation\/report(\/guest)?|intake\/(status|callback)|stats|cases(\/.*)?|traces(\/guest|\/[0-9a-f-]{36}\/withdraw)?|crm\/.+|associates\/.+|admin\/(ingestion|companies)(\/.*)?|admin\/traces(\/[0-9a-f-]{36}(\/checks)?)?|health)$/;
 
 const secure = process.env.NODE_ENV === "production";
 

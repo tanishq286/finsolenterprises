@@ -15,9 +15,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { JsonLd } from "@/components/seo/json-ld";
 import { getCompany, listCompanies } from "@/lib/companies";
-import { formatCount, formatDate, formatPaise } from "@/lib/format";
+import { exampleYearFor } from "@/lib/calculator";
+import { companyDisplayName, formatCount, formatDate, formatPaise } from "@/lib/format";
 import { CHECK_CTA } from "@/components/site/cta";
 import { SITE_URL } from "@/lib/site";
+import { cn } from "@/lib/utils";
 
 // Matches the API's 15-minute price sync.
 export const revalidate = 900;
@@ -33,15 +35,21 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const c = await getCompany((await params).slug);
   if (!c) return {};
+  const name = companyDisplayName(c.name);
   return {
-    title: `Recover unclaimed ${c.name} shares and dividends`,
-    description: `Unclaimed ${c.name} shares recovered end to end by Finsol Enterprises: bonus and split history, the latest available share price and a free 3-Minute Check. No upfront fee.`,
+    title: `Recover unclaimed ${name} shares and dividends`,
+    description: `Unclaimed ${name} shares recovered end to end by Finsol Enterprises: bonus and split history, the latest available share price and a free 3-Minute Check. No upfront fee.`,
     alternates: { canonical: `/unclaimed-shares/${c.slug}` },
   };
 }
 
-const EXAMPLE_YEAR = 1995;
 const EXAMPLE_SHARES = 100;
+
+/** Exchange feeds label every bonus and split row "split history"; bonuses say what they are. */
+function sourceText(a: { actionType: string; source: string | null }) {
+  if (!a.source || a.actionType !== "BONUS") return a.source;
+  return a.source.replace(/split history/i, "corporate-action record");
+}
 
 function ratioText(a: {
   actionType: string;
@@ -64,9 +72,13 @@ const ACTION_LABEL: Record<string, string> = {
 
 export default async function CompanyGuidePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const c = await getCompany(slug);
-  if (!c) notFound();
+  const raw = await getCompany(slug);
+  if (!raw) notFound();
+  const c = { ...raw, name: companyDisplayName(raw.name) };
 
+  const { year: EXAMPLE_YEAR, fromRecords: exampleFromRecords } = exampleYearFor(
+    raw.corporateActions,
+  );
   const structural = c.corporateActions.filter((a) => a.actionType !== "DIVIDEND");
   const dividends = c.corporateActions
     .filter((a) => a.actionType === "DIVIDEND")
@@ -160,7 +172,8 @@ export default async function CompanyGuidePage({ params }: { params: Promise<{ s
             </h2>
             <p className="mt-3 text-fg-2">
               After the bonuses and splits below, {formatCount(EXAMPLE_SHARES)} shares held since{" "}
-              {EXAMPLE_YEAR} would now be{" "}
+              {EXAMPLE_YEAR}
+              {exampleFromRecords ? ", the earliest year in our records," : ""} would now be{" "}
               <strong className="text-fg tnum">{formatCount(example.shares)} shares</strong>
               {exampleValue !== null ? (
                 <>
@@ -212,8 +225,10 @@ export default async function CompanyGuidePage({ params }: { params: Promise<{ s
                   <tbody className="divide-y divide-(--glass-border)">
                     {structural.map((a) => (
                       <tr key={`${a.actionType}-${a.exDate}`} className="align-top">
-                        <td className="px-4 py-3 text-fg-2 tnum">{formatDate(a.exDate)}</td>
-                        <td className="px-4 py-3 text-fg">
+                        <td className="px-4 py-3 whitespace-nowrap text-fg-2 tnum">
+                          {formatDate(a.exDate)}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap text-fg">
                           {ACTION_LABEL[a.actionType] ?? a.actionType}
                         </td>
                         <td className="px-4 py-3 text-fg-2">
@@ -222,7 +237,7 @@ export default async function CompanyGuidePage({ params }: { params: Promise<{ s
                             <span className="mt-1 block text-sm text-fg-3">{a.notes}</span>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-sm text-fg-3">{a.source}</td>
+                        <td className="px-4 py-3 text-sm text-fg-3">{sourceText(a)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -309,7 +324,14 @@ export default async function CompanyGuidePage({ params }: { params: Promise<{ s
                 .map(([k, v]) => (
                   <div key={k} className="flex justify-between gap-4">
                     <dt className="text-fg-3">{k}</dt>
-                    <dd className="text-right font-mono break-all text-fg tnum">{v}</dd>
+                    <dd
+                      className={cn(
+                        "text-right break-words text-fg",
+                        k === "Sector" ? "" : "font-mono tnum",
+                      )}
+                    >
+                      {v}
+                    </dd>
                   </div>
                 ))}
             </dl>
