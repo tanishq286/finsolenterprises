@@ -139,7 +139,7 @@ export function SearchResults({
             Company names, share counts and values are restricted: they open after a free sign-in.
             Folio numbers stay hidden until our team has verified the claim.
           </p>
-          <Button onClick={() => setGatewayOpen(true)}>
+          <Button className="shrink-0 whitespace-nowrap" onClick={() => setGatewayOpen(true)}>
             <KeyRoundIcon aria-hidden="true" />
             Open the Login Gateway
           </Button>

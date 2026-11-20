@@ -186,7 +186,7 @@ export function Stages({ stages }: { stages: Stage[] }) {
                 data-stage-index
                 className="group flex items-center gap-3 text-2xl font-[560] tracking-[-0.02em] text-fg-3 transition-colors duration-300 ease-(--ease-out) [font-stretch:106%] data-[active]:text-fg"
               >
-                <span className="size-2 rounded-full bg-control transition-[background-color,transform,box-shadow] duration-300 ease-(--ease-out) group-data-[active]:scale-125 group-data-[active]:bg-brand-cyan group-data-[active]:shadow-[0_0_12px_var(--color-brand-cyan)]" />
+                <span className="size-2 shrink-0 rounded-full bg-control transition-[background-color,transform,box-shadow] duration-300 ease-(--ease-out) group-data-[active]:scale-125 group-data-[active]:bg-brand-cyan group-data-[active]:shadow-[0_0_12px_var(--color-brand-cyan)]" />
                 {s.title}
               </li>
             ))}

@@ -159,6 +159,50 @@ export function formatPaiseCompact(paise: number): string {
   return inr.format(Math.round(rupees));
 }
 
+/** Words that stay lower case inside a title-cased company name, and fixed spellings. */
+const NAME_JOINERS = new Set(["and", "of", "the", "for", "&"]);
+const NAME_FIXED: Record<string, string> = { LTD: "Ltd", PVT: "Pvt", CO: "Co" };
+
+/**
+ * "TATA CONSUMER PRODUCTS LIMITED" → "Tata Consumer Products Limited". Only
+ * names written entirely in capitals change; acronyms stay in capitals when
+ * they are short (ITC, BSE) or have no vowels (HDFC, BPCL, NMDC).
+ */
+export function companyDisplayName(name: string): string {
+  if (name !== name.toUpperCase() || !/[A-Z]/.test(name)) return name;
+  return name
+    .split(/(\s+|-|\(|\))/)
+    .map((w, i) => {
+      const letters = w.replace(/[^A-Z]/g, "");
+      if (!letters || !/^[A-Z.&']+$/.test(w)) return w;
+      if (NAME_FIXED[letters]) return w.replace(letters, NAME_FIXED[letters]!);
+      const lower = w.toLowerCase();
+      if (i > 0 && NAME_JOINERS.has(lower)) return lower;
+      if (letters.length <= 3 || !/[AEIOU]/.test(letters)) return w;
+      return lower.charAt(0).toUpperCase() + lower.slice(1);
+    })
+    .join("");
+}
+
+/**
+ * The years of statements on record, never past the current year or the year
+ * the latest statement was published (a "due for transfer" year can be in the
+ * future, and is not a statement period).
+ */
+export function statementYears(
+  oldest: number | null,
+  newest: number | null,
+  latestPublishedAt: string | null,
+  now: Date = new Date(),
+): string {
+  if (oldest === null) return "Not known";
+  const published = latestPublishedAt ? new Date(latestPublishedAt).getUTCFullYear() : NaN;
+  const cap = Math.min(now.getUTCFullYear(), Number.isFinite(published) ? published : Infinity);
+  const last = Math.min(newest ?? oldest, cap);
+  const first = Math.min(oldest, last);
+  return first === last ? String(first) : `${first}–${last}`;
+}
+
 /** A lower bound for headline figures: 73,81,440 rupees → "₹73+ Lakhs"; 3.03 crore → "₹3+ Crore". */
 export function formatPaisePlus(paise: number): string {
   const rupees = paise / 100;

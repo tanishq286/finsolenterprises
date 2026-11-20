@@ -22,16 +22,19 @@ export function DeeperTrace({
   holderName,
   scope,
   signedIn,
+  company = "",
 }: {
   holderName: string;
   scope: string;
   signedIn: boolean;
+  /** Pre-filled suspected company, from a calculator or folio-lookup handoff. */
+  company?: string;
 }) {
   const [step, setStep] = useState<1 | 2>(1);
 
   // Step 1: Investor & Asset Clues
   const [investorName, setInvestorName] = useState(holderName || "");
-  const [companies, setCompanies] = useState("");
+  const [companies, setCompanies] = useState(company);
   const [years, setYears] = useState("");
   const [oldAddress, setOldAddress] = useState("");
   const [oldCity, setOldCity] = useState("");

@@ -74,7 +74,7 @@ const PROMISES: { title: string; body: string; Icon: LucideIcon }[] = [
   },
   {
     title: "Confidential Handling",
-    body: "Your details and documents are used for your recovery and never sold. We share them only with the parties your claim needs, such as the company, its registrar and the IEPF Authority, and with the service providers that run this site.",
+    body: "Your details are used only for your recovery, shared only where your claim needs them.",
     Icon: LockKeyholeIcon,
   },
 ];
@@ -125,14 +125,16 @@ export default function LandingPage() {
               {BRAND.name} finds unclaimed shares and dividends and recovers them end to end. You
               only need a name and a state to start.
             </p>
-            <div data-hero-reveal data-hero-follow className="mt-8 max-w-[44rem]">
+            {/* The check itself paints immediately: no entrance animation on the form. */}
+            <div className="mt-8 max-w-[44rem]">
               <UnclaimedSearchForm />
             </div>
-            <div data-hero-reveal data-hero-follow className="mt-8 max-w-[44rem]">
-              <LiveCounters />
-            </div>
           </HeroReveal>
-          <RouteField className="mt-10 h-64 [mask-image:linear-gradient(to_bottom,black_70%,transparent)] sm:h-80 lg:absolute lg:inset-y-0 lg:right-0 lg:mt-0 lg:h-auto lg:w-[60%] lg:[mask-image:linear-gradient(to_right,transparent,black_34%)]" />
+          {/* Its own column on wide screens, so the drawing never runs behind the search card. */}
+          <RouteField className="mt-10 h-64 [mask-image:linear-gradient(to_bottom,black_70%,transparent)] sm:h-80 lg:col-span-5 lg:mt-0 lg:h-[34rem] lg:[mask-image:linear-gradient(to_right,transparent,black_22%)]" />
+          <div className="relative z-10 mt-10 lg:col-span-12 lg:mt-12">
+            <LiveCounters />
+          </div>
         </div>
       </section>
 
@@ -333,7 +335,7 @@ export default function LandingPage() {
               </p>
             </div>
             <Magnetic>
-              <Button asChild size="lg" className="sheen">
+              <Button asChild size="lg" className="sheen whitespace-nowrap">
                 <Link href="/search" transitionTypes={["nav-forward"]}>
                   {CHECK_CTA}
                   <ArrowRightIcon aria-hidden="true" />

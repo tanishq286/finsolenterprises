@@ -17,8 +17,12 @@ describe("zero-result search and the Deeper Trace intake", () => {
   it("shows the reassurance card and the trace form instead of a blank result", () => {
     expect(page).toContain('data-testid="search-no-match"');
     expect(page).toContain(
-      "We searched our instant index of top listed companies. Don't worry if your name wasn't found—over 3,000 older companies and physical share certificates require an archival RTA trace.",
+      "We searched our instant index of listed companies. Many older companies and physical certificates are not in our index yet; an analyst can trace them.",
     );
+    // No unbacked coverage numbers or archival-trace claims on the public page.
+    expect(page).not.toMatch(/3,000|archival RTA/);
+    // The debug timing stays off the public header.
+    expect(page).not.toContain("tookMs");
     // The card also states how many companies the index really holds.
     expect(page).toContain("data.coverage.companiesWithRecordsCount");
     expect(page).toContain("<DeeperTrace");

@@ -8,6 +8,7 @@ import { AccountLink } from "@/components/auth/account-link";
 
 const NAV = [
   { href: "/search", label: "3-Minute Check" },
+  { href: "/deeper-trace", label: "Deeper Trace" },
   { href: "/services", label: "Services" },
   { href: "/calculator", label: "Calculator" },
   { href: "/unclaimed-shares", label: "Companies" },
